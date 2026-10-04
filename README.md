@@ -1,33 +1,47 @@
-### Nagi Attendance
+# Nagi Attendance
 
-Manager-friendly attendance and leave dashboard for Frappe HR
+Nagi Attendance is a manager-focused Attendance & Leave dashboard for Frappe HR. It reads the standard HRMS records and does not create a parallel attendance model.
 
-### Installation
+## Requirements
 
-You can install this app using the [bench](https://github.com/frappe/bench) CLI:
+- Frappe / ERPNext v16
+- Frappe HR (`hrms`) v16
+- A user with read access to Employee, Attendance, Employee Checkin, Leave Application, and Holiday List
+- `HR Manager`, `HR User`, or `System Manager` to see the standard Desk page/workspace
 
-```bash
-cd $PATH_TO_YOUR_BENCH
-bench get-app $URL_OF_THIS_REPO --branch version-16
-bench install-app nagi_attendance
-```
-
-### Contributing
-
-This app uses `pre-commit` for code formatting and linting. Please [install pre-commit](https://pre-commit.com/#installation) and enable it for this repository:
+## Install
 
 ```bash
-cd apps/nagi_attendance
-pre-commit install
+bench --site your-site install-app hrms
+bench --site your-site install-app nagi_attendance
+bench --site your-site migrate
+bench build --app nagi_attendance
 ```
 
-Pre-commit is configured to use the following tools for checking and formatting your code:
+Open **Nagi Attendance** from Desk or visit `/app/manager-attendance`.
 
-- ruff
-- eslint
-- prettier
-- pyupgrade
+## APIs
 
-### License
+- `nagi_attendance.api.get_today_dashboard(date=None, employee=None, department=None)`
+- `nagi_attendance.api.get_monthly_attendance(year, month, employee=None, department=None)`
+- `nagi_attendance.api.get_leave_dashboard(date=None)`
+- `nagi_attendance.api.get_employee_details(employee, date=None, year=None, month=None)`
+- `nagi_attendance.api.apply_leave_action(name, action)`
 
-mit
+All list queries use the current user's Frappe permissions. Leave decisions are restricted to currently available workflow transitions and go through Frappe's workflow engine.
+
+## Status precedence
+
+1. Submitted, approved Leave Application covering the date
+2. Holiday or weekly off from the employee/company Holiday List Assignment
+3. Submitted Attendance status
+4. Same-day Employee Checkin status for a near-real-time view
+5. Absent for unrecorded past working days, or Not Checked In for today
+
+Attendance remains authoritative for hours, late entry, early exit, and check-in/out times once it exists. Before auto-attendance is processed, check-ins supply the live status and paired working time.
+
+## Tests
+
+```bash
+bench --site your-site run-tests --app nagi_attendance
+```

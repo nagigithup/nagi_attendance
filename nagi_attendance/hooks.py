@@ -8,7 +8,7 @@ app_license = "mit"
 # Apps
 # ------------------
 
-# required_apps = []
+required_apps = ["hrms"]
 
 # Each item in the list will be shown as an app in the apps page
 # add_to_apps_screen = [
@@ -25,7 +25,7 @@ app_license = "mit"
 # ------------------
 
 # include js, css files in header of desk.html
-# app_include_css = "/assets/nagi_attendance/css/nagi_attendance.css"
+app_include_css = "/assets/nagi_attendance/css/nagi_attendance.css"
 # app_include_js = "/assets/nagi_attendance/js/nagi_attendance.js"
 
 # include js, css files in header of web template
@@ -255,4 +255,3 @@ app_license = "mit"
 # ------------
 # List of apps whose translatable strings should be excluded from this app's translations.
 # ignore_translatable_strings_from = []
-
