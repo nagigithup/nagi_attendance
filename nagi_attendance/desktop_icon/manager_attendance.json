@@ -1,0 +1,20 @@
+{
+ "app": "nagi_attendance",
+ "doctype": "Desktop Icon",
+ "hidden": 0,
+ "icon": "calendar-check",
+ "icon_type": "Link",
+ "idx": 30,
+ "label": "Manager Attendance",
+ "link": "/desk/manager-attendance",
+ "link_type": "External",
+ "name": "Manager Attendance",
+ "restrict_removal": 0,
+ "roles": [
+  {"role": "HR Manager"},
+  {"role": "HR User"},
+  {"role": "System Manager"}
+ ],
+ "sidebar": "Nagi Attendance",
+ "standard": 1
+}

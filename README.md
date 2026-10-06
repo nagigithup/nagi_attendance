@@ -18,7 +18,9 @@ bench --site your-site migrate
 bench build --app nagi_attendance
 ```
 
-Open **Nagi Attendance** from Desk or visit `/app/manager-attendance`.
+Open **Nagi Attendance** from Desk to go directly to the existing Manager Attendance dashboard, or visit `/desk/manager-attendance`.
+
+The former `/desk/nagi-attendance` workspace route is retained only as a redirect for old bookmarks.
 
 ## APIs
 

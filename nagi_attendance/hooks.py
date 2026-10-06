@@ -10,6 +10,10 @@ app_license = "mit"
 
 required_apps = ["hrms"]
 
+# Open the existing manager dashboard directly when Nagi Attendance is selected.
+# Frappe v16 uses /desk as its canonical Desk route.
+app_home = "/desk/manager-attendance"
+
 # Each item in the list will be shown as an app in the apps page
 # add_to_apps_screen = [
 # 	{
@@ -26,7 +30,7 @@ required_apps = ["hrms"]
 
 # include js, css files in header of desk.html
 app_include_css = "/assets/nagi_attendance/css/nagi_attendance.css"
-# app_include_js = "/assets/nagi_attendance/js/nagi_attendance.js"
+app_include_js = "/assets/nagi_attendance/js/nagi_attendance.js"
 
 # include js, css files in header of web template
 # web_include_css = "/assets/nagi_attendance/css/nagi_attendance.css"

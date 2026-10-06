@@ -1,0 +1,23 @@
+{
+ "app": "nagi_attendance",
+ "doctype": "Workspace Sidebar",
+ "header_icon": "calendar-check",
+ "items": [
+  {
+   "child": 0,
+   "collapsible": 1,
+   "icon": "calendar-check",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Manager Attendance",
+   "link_to": "manager-attendance",
+   "link_type": "Page",
+   "show_arrow": 0,
+   "type": "Link"
+  }
+ ],
+ "module": "Nagi Attendance",
+ "name": "Nagi Attendance",
+ "standard": 1,
+ "title": "Nagi Attendance"
+}
