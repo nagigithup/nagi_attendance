@@ -4,6 +4,7 @@ frappe.pages["manager-attendance"].on_page_load = (wrapper) => {
 
 class NagiAttendance {
 	constructor(wrapper) {
+		this.is_arabic = (frappe.boot?.lang || "").toLowerCase().startsWith("ar");
 		this.page = frappe.ui.make_app_page({
 			parent: wrapper,
 			title: __("Nagi Attendance"),
@@ -38,7 +39,7 @@ class NagiAttendance {
 
 	render_shell() {
 		this.$root = $(
-			`<div class="nagi-attendance">
+			`<div class="nagi-attendance" dir="${this.is_arabic ? "rtl" : "ltr"}" lang="${this.is_arabic ? "ar" : "en"}">
 				<section class="na-hero">
 					<div><span class="na-kicker">${__("Manager overview")}</span><h2>${__("Attendance & Leave")}</h2><p>${__("A clear view of your team, right now.")}</p></div>
 					<button class="btn btn-default btn-sm" data-action="refresh">${frappe.utils.icon("refresh-cw", "sm")} ${__("Refresh")}</button>
@@ -58,13 +59,13 @@ class NagiAttendance {
 	render_filters() {
 		const monthly = this.state.tab === "monthly";
 		const html = monthly
-			? `<label>${__("Month")}<select data-filter="month">${Array.from({ length: 12 }, (_, index) => `<option value="${index + 1}" ${this.state.month === index + 1 ? "selected" : ""}>${moment().month(index).format("MMMM")}</option>`).join("")}</select></label>
+			? `<label>${__("Month")}<select data-filter="month">${Array.from({ length: 12 }, (_, index) => `<option value="${index + 1}" ${this.state.month === index + 1 ? "selected" : ""}>${this.localized_moment().month(index).format("MMMM")}</option>`).join("")}</select></label>
 			   <label>${__("Year")}<input type="number" data-filter="year" min="2000" max="2100" value="${this.state.year}"></label>`
 			: `<label>${__("Date")}<input type="date" data-filter="date" value="${this.state.date}"></label>`;
 		this.$root.find(".na-filters").html(`${html}
 			<label>${__("Employee")}<select data-filter="employee"><option value="">${__("All employees")}</option></select></label>
 			<label>${__("Department")}<select data-filter="department"><option value="">${__("All departments")}</option></select></label>
-			${this.state.tab === "today" ? `<label>${__("Status")}<select data-filter="status"><option value="">${__("All statuses")}</option>${["Present", "Absent", "On Leave", "Late", "Half Day", "Work From Home", "Not Checked In", "Holiday", "Weekly Off"].map((value) => `<option ${this.state.status === value ? "selected" : ""}>${__(value)}</option>`).join("")}</select></label>` : ""}`);
+			${this.state.tab === "today" ? `<label>${__("Status")}<select data-filter="status"><option value="">${__("All statuses")}</option>${["Present", "Absent", "On Leave", "Late", "Half Day", "Work From Home", "Not Checked In", "Holiday", "Weekly Off"].map((value) => `<option value="${this.esc(value)}" ${this.state.status === value ? "selected" : ""}>${__(value)}</option>`).join("")}</select></label>` : ""}`);
 		this.populate_filter_options();
 	}
 
@@ -139,11 +140,11 @@ class NagiAttendance {
 			["not_checked_in", __("Not Checked In"), "log-in", "Not Checked In"],
 		].map(([key, label, icon, status]) => `<button class="na-stat na-stat-${key}" data-summary-status="${status}">${frappe.utils.icon(icon, "md")}<span>${label}</span><strong>${s[key]}</strong></button>`).join("");
 		const employees = this.today.employees.map((row) => this.employee_card(row)).join("") || this.empty(__("No active employees match these filters."));
-		const timeline = this.today.timeline.length ? this.today.timeline.map((row) => `<li><time>${row.time_label}</time><span class="na-timeline-dot ${row.log_type === "OUT" ? "out" : ""}"></span><div><button data-employee="${this.esc(row.employee)}">${this.esc(row.employee_name)}</button> ${row.log_type === "OUT" ? __("checked out") : __("checked in")}${row.late ? ` <span class="na-inline-late">${__("Late")}</span>` : ""}</div></li>`).join("") : this.empty(__("No check-in activity for this date."));
+		const timeline = this.today.timeline.length ? this.today.timeline.map((row) => `<li><time>${row.time_label}</time><span class="na-timeline-dot ${row.log_type === "OUT" ? "out" : ""}"></span><div>${this.timeline_activity(row)}${row.late ? ` <span class="na-inline-late">${__("Late")}</span>` : ""}</div></li>`).join("") : this.empty(__("No check-in activity for this date."));
 		this.$root.find(".na-view").html(`
 			<div class="na-stats">${cards}</div>
 			<div class="na-today-grid">
-				<section class="na-panel"><div class="na-panel-head"><div><span>${__("Team status")}</span><h3>${moment(this.today.date).format("dddd, D MMMM")}</h3></div><small>${s.total} ${__("employees")}</small></div><div class="na-people">${employees}</div></section>
+				<section class="na-panel"><div class="na-panel-head"><div><span>${__("Team status")}</span><h3>${this.format_full_date(this.today.date)}</h3></div><small>${this.employee_count(s.total)}</small></div><div class="na-people">${employees}</div></section>
 				<section class="na-panel na-timeline"><div class="na-panel-head"><div><span>${__("Live activity")}</span><h3>${__("Today's timeline")}</h3></div></div><ol>${timeline}</ol></section>
 			</div>`);
 		this.apply_status_filter();
@@ -151,13 +152,13 @@ class NagiAttendance {
 
 	employee_card(row) {
 		const avatar = row.image ? `<img src="${this.esc(row.image)}" alt="">` : `<span>${this.esc((row.employee_name || "?").slice(0, 1))}</span>`;
-		const detail = row.status === "On Leave" && row.status_detail ? `${__("On Leave")} · ${this.esc(row.status_detail)}` : __(row.status);
+		const detail = row.status === "On Leave" && row.status_detail ? `${__("On Leave")} · ${this.esc(__(row.status_detail))}` : __(row.status);
 		return `<article class="na-person" data-person-status="${this.esc(row.status)}" data-is-late="${row.late ? 1 : 0}">
 			<button class="na-person-main" data-employee="${this.esc(row.name)}"><span class="na-avatar">${avatar}</span><span><strong>${this.esc(row.employee_name)}</strong><small>${this.esc([row.designation, row.department].filter(Boolean).join(" · ") || __("Employee"))}</small></span></button>
 			<div class="na-status"><span class="na-badge status-${frappe.scrub(row.status)}">${detail}</span>${row.late && row.status !== "Late" ? `<small>${__("Late arrival")}</small>` : ""}</div>
-			<div class="na-person-metric"><span>${__("Check in")}</span><strong>${row.in_time_label || "—"}</strong></div>
-			<div class="na-person-metric"><span>${__("Check out")}</span><strong>${row.out_time_label || "—"}</strong></div>
-			<div class="na-person-metric"><span>${__("Working")}</span><strong>${row.working_hours_label}</strong></div>
+			<div class="na-person-metric"><span>${__("Check In")}</span><strong>${row.in_time_label || "—"}</strong></div>
+			<div class="na-person-metric"><span>${__("Check Out")}</span><strong>${row.out_time_label || "—"}</strong></div>
+			<div class="na-person-metric"><span>${__("Working Hours")}</span><strong>${this.localize_duration(row.working_hours_label)}</strong></div>
 			<div class="na-person-metric"><span>${__("Shift")}</span><strong>${this.esc(row.shift || "—")}</strong></div>
 		</article>`;
 	}
@@ -184,12 +185,12 @@ class NagiAttendance {
 
 	render_monthly() {
 		const data = this.monthly;
-		const summaries = data.employees.map((row) => `<article class="na-month-summary"><button data-employee="${this.esc(row.name)}"><strong>${this.esc(row.employee_name)}</strong><small>${this.esc(row.designation || "")}</small></button>${[["working_days", "Working Days"], ["present", "Present"], ["absent", "Absent"], ["leave", "Leave"], ["late", "Late"], ["working_hours_label", "Working Hours"]].map(([key, label]) => `<div><span>${__(label)}</span><strong>${row.summary[key] ?? "—"}</strong></div>`).join("")}<div><span>${__("Avg. In / Out")}</span><strong>${row.summary.average_in || "—"} / ${row.summary.average_out || "—"}</strong></div></article>`).join("");
-		const header = data.days.map((day) => `<th class="${["Fri", "Sat", "Sun"].includes(day.weekday) ? "weekend" : ""}"><span>${day.weekday}</span>${day.day}</th>`).join("");
-		const rows = data.employees.map((employee) => `<tr><th><button data-employee="${this.esc(employee.name)}">${this.esc(employee.employee_name)}</button></th>${employee.days.map((cell) => `<td><span class="na-day status-${frappe.scrub(cell.status)}" tabindex="0" data-toggle="tooltip" title="${this.esc(`${cell.date} · ${cell.status}${cell.detail ? ` · ${cell.detail}` : ""} · ${cell.in_time || "—"}–${cell.out_time || "—"} · ${cell.working_hours_label}${cell.late ? " · Late" : ""}${cell.early_exit ? " · Early exit" : ""}`)}">${cell.code}</span></td>`).join("")}</tr>`).join("");
+		const summaries = data.employees.map((row) => `<article class="na-month-summary"><button data-employee="${this.esc(row.name)}"><strong>${this.esc(row.employee_name)}</strong><small>${this.esc(row.designation || "")}</small></button>${[["working_days", "Working Days"], ["present", "Present Days"], ["absent", "Absent Days"], ["leave", "Leave Days"], ["late", "Late Days"], ["working_hours_label", "Total Working Hours"]].map(([key, label]) => `<div><span>${__(label)}</span><strong>${key === "working_hours_label" ? this.localize_duration(row.summary[key]) : (row.summary[key] ?? "—")}</strong></div>`).join("")}<div><span>${__("Average Check-In / Check-Out")}</span><strong>${row.summary.average_in || "—"} / ${row.summary.average_out || "—"}</strong></div></article>`).join("");
+		const header = data.days.map((day) => `<th class="${["Fri", "Sat", "Sun"].includes(day.weekday) ? "weekend" : ""}"><span>${__(day.weekday)}</span>${day.day}</th>`).join("");
+		const rows = data.employees.map((employee) => `<tr><th><button data-employee="${this.esc(employee.name)}">${this.esc(employee.employee_name)}</button></th>${employee.days.map((cell) => `<td><span class="na-day status-${frappe.scrub(cell.status)}" tabindex="0" data-toggle="tooltip" title="${this.esc(this.calendar_tooltip(cell))}">${__(cell.code)}</span></td>`).join("")}</tr>`).join("");
 		this.$root.find(".na-view").html(`
 			<section class="na-summary-list">${summaries || this.empty(__("No employees found."))}</section>
-			<section class="na-panel"><div class="na-panel-head"><div><span>${__("Calendar")}</span><h3>${moment({ year: data.year, month: data.month - 1 }).format("MMMM YYYY")}</h3></div><div class="na-legend"><span>P ${__("Present")}</span><span>A ${__("Absent")}</span><span>L ${__("Leave")}</span><span>HD ${__("Half Day")}</span><span>WO ${__("Weekly Off")}</span></div></div><div class="na-calendar-scroll"><table class="na-calendar"><thead><tr><th>${__("Employee")}</th>${header}</tr></thead><tbody>${rows}</tbody></table></div></section>
+			<section class="na-panel"><div class="na-panel-head"><div><span>${__("Calendar")}</span><h3>${this.localized_moment({ year: data.year, month: data.month - 1 }).format("MMMM YYYY")}</h3></div><div class="na-legend"><span>${__("P")} ${__("Present")}</span><span>${__("A")} ${__("Absent")}</span><span>${__("L")} ${__("Leave")}</span><span>${__("HD")} ${__("Half Day")}</span><span>${__("WO")} ${__("Weekly Off")}</span></div></div><div class="na-calendar-scroll"><table class="na-calendar"><thead><tr><th>${__("Employee")}</th>${header}</tr></thead><tbody>${rows}</tbody></table></div></section>
 			<section class="na-charts"><article class="na-panel"><h3>${__("Monthly Attendance Breakdown")}</h3><div id="na-breakdown-chart"></div></article><article class="na-panel"><h3>${__("Attendance Trend")}</h3><div id="na-trend-chart"></div></article><article class="na-panel"><h3>${__("Late Arrival")}</h3><div id="na-late-chart"></div></article></section>`);
 		this.render_charts();
 		this.$root.find('[data-toggle="tooltip"]').tooltip({ container: "body" });
@@ -215,20 +216,20 @@ class NagiAttendance {
 
 	render_leave() {
 		this.$root.find(".na-view").html(`<div class="na-leave-grid">
-			<section class="na-panel"><div class="na-panel-head"><div><span>${__("Today")}</span><h3>${__("On Leave")}</h3></div><strong class="na-count">${this.leave.on_leave.length}</strong></div>${this.leave_rows(this.leave.on_leave)}</section>
+			<section class="na-panel"><div class="na-panel-head"><div><span>${__("Leave")}</span><h3>${__("On Leave Today")}</h3></div><strong class="na-count">${this.leave.on_leave.length}</strong></div>${this.leave_rows(this.leave.on_leave)}</section>
 			<section class="na-panel"><div class="na-panel-head"><div><span>${__("Approved")}</span><h3>${__("Upcoming Leave")}</h3></div></div>${this.leave_rows(this.leave.upcoming)}</section>
-			<section class="na-panel na-pending"><div class="na-panel-head"><div><span>${__("Needs attention")}</span><h3>${__("Pending Requests")}</h3></div><strong class="na-count">${this.leave.pending.length}</strong></div>${this.leave_rows(this.leave.pending, true)}</section>
+			<section class="na-panel na-pending"><div class="na-panel-head"><div><span>${__("Needs attention")}</span><h3>${__("Pending Leave Requests")}</h3></div><strong class="na-count">${this.leave.pending.length}</strong></div>${this.leave_rows(this.leave.pending, true)}</section>
 		</div>`);
 	}
 
 	leave_rows(rows, pending = false) {
 		if (!rows.length) return this.empty(pending ? __("No pending leave requests.") : __("No leave scheduled."));
-		return `<div class="na-leave-list">${rows.map((row) => `<article><div><button data-employee="${this.esc(row.employee)}">${this.esc(row.employee_name)}</button><span class="na-badge status-on-leave">${this.esc(row.leave_type)}</span></div><p>${frappe.datetime.str_to_user(row.from_date)} → ${frappe.datetime.str_to_user(row.to_date)} · ${row.total_leave_days} ${__("days")}</p>${row.description ? `<small>${this.esc(row.description)}</small>` : ""}<div class="na-leave-actions">${pending ? row.actions.map((action) => `<button class="btn btn-${action.toLowerCase().includes("reject") ? "default" : "primary"} btn-xs" data-leave-action="${this.esc(action)}" data-leave-name="${this.esc(row.name)}">${this.esc(__(action))}</button>`).join("") : ""}<button class="btn btn-default btn-xs" onclick="frappe.set_route('Form', 'Leave Application', '${this.esc(row.name)}')">${__("Open")}</button></div></article>`).join("")}</div>`;
+		return `<div class="na-leave-list">${rows.map((row) => `<article><div><button data-employee="${this.esc(row.employee)}">${this.esc(row.employee_name)}</button><span class="na-badge status-on-leave">${this.esc(__(row.leave_type))}</span></div><p>${frappe.datetime.str_to_user(row.from_date)} → ${frappe.datetime.str_to_user(row.to_date)} · ${row.total_leave_days} ${__("days")}</p>${row.description ? `<small>${this.esc(row.description)}</small>` : ""}<div class="na-leave-actions">${pending ? row.actions.map((action) => `<button class="btn btn-${action.toLowerCase().includes("reject") ? "default" : "primary"} btn-xs" data-leave-action="${this.esc(action)}" data-leave-name="${this.esc(row.name)}">${this.esc(__(action))}</button>`).join("") : ""}<button class="btn btn-default btn-xs" onclick="frappe.set_route('Form', 'Leave Application', '${this.esc(row.name)}')">${__("View Application")}</button></div></article>`).join("")}</div>`;
 	}
 
 	async apply_leave_action(button) {
 		const action = button.dataset.leaveAction;
-		frappe.confirm(__("Apply workflow action {0}?", [action]), async () => {
+		frappe.confirm(__("Apply workflow action {0}?", [__(action)]), async () => {
 			await this.call("apply_leave_action", { name: button.dataset.leaveName, action });
 			frappe.show_alert({ message: __("Leave request updated"), indicator: "green" });
 			this.load_leave();
@@ -244,9 +245,9 @@ class NagiAttendance {
 			const row = data.employee;
 			if (!row) return dialog.hide();
 			dialog.set_title(row.employee_name);
-			dialog.fields_dict.content.$wrapper.html(`<div class="na-drawer">
-				<div class="na-drawer-profile"><span class="na-avatar">${row.image ? `<img src="${this.esc(row.image)}" alt="">` : this.esc(row.employee_name.slice(0, 1))}</span><div><h3>${this.esc(row.employee_name)}</h3><p>${this.esc(row.designation || __("Employee"))}</p><span class="na-badge status-${frappe.scrub(row.status)}">${this.esc(row.status)}</span></div></div>
-				<div class="na-drawer-metrics">${[["Check In", row.in_time_label], ["Check Out", row.out_time_label], ["Working Today", row.working_hours_label], ["Present This Month", data.month.present], ["Absent This Month", data.month.absent], ["Leave This Month", data.month.leave], ["Late This Month", data.month.late], ["Monthly Hours", data.month.working_hours_label]].map(([label, value]) => `<div><span>${__(label)}</span><strong>${value ?? "—"}</strong></div>`).join("")}</div>
+			dialog.fields_dict.content.$wrapper.html(`<div class="na-drawer" dir="${this.is_arabic ? "rtl" : "ltr"}">
+				<div class="na-drawer-profile"><span class="na-avatar">${row.image ? `<img src="${this.esc(row.image)}" alt="">` : this.esc(row.employee_name.slice(0, 1))}</span><div><h3>${this.esc(row.employee_name)}</h3><p>${this.esc(row.designation || __("Employee"))}</p><span class="na-badge status-${frappe.scrub(row.status)}">${this.esc(__(row.status))}</span></div></div>
+				<div class="na-drawer-metrics">${[["Check In", row.in_time_label], ["Check Out", row.out_time_label], ["Working Today", this.localize_duration(row.working_hours_label)], ["Present This Month", data.month.present], ["Absent This Month", data.month.absent], ["Leave This Month", data.month.leave], ["Late This Month", data.month.late], ["Monthly Hours", this.localize_duration(data.month.working_hours_label)]].map(([label, value]) => `<div><span>${__(label)}</span><strong>${value ?? "—"}</strong></div>`).join("")}</div>
 				<h4>${__("Upcoming Leave")}</h4>${this.leave_rows(data.upcoming_leave.map((leave) => ({ ...leave, employee: row.name, employee_name: row.employee_name })))}
 				<div class="na-drawer-links"><button class="btn btn-default btn-sm" data-route="Employee">${__("View Employee")}</button><button class="btn btn-default btn-sm" data-route="Attendance">${__("View Attendance")}</button><button class="btn btn-default btn-sm" data-route="Employee Checkin">${__("View Check-ins")}</button><button class="btn btn-default btn-sm" data-route="Leave Application">${__("View Leave Applications")}</button></div>
 			</div>`);
@@ -259,6 +260,46 @@ class NagiAttendance {
 		} catch (error) {
 			dialog.fields_dict.content.$wrapper.html(this.error_html(error));
 		}
+	}
+
+	localized_moment(value) {
+		const localized = value === undefined ? moment() : moment(value);
+		return localized.locale(this.is_arabic ? "ar" : (frappe.boot?.lang || "en"));
+	}
+
+	format_full_date(value) {
+		return this.localized_moment(value).format(this.is_arabic ? "dddd، D MMMM" : "dddd, D MMMM");
+	}
+
+	employee_count(count) {
+		if (!this.is_arabic) return count === 1 ? __("One employee") : __("{0} employees", [count]);
+		if (count === 1) return __("One employee");
+		if (count === 2) return __("Two employees");
+		if (count >= 3 && count <= 10) return __("{0} team members", [count]);
+		return __("{0} employees total", [count]);
+	}
+
+	timeline_activity(row) {
+		const employee = `<button data-employee="${this.esc(row.employee)}">${this.esc(row.employee_name)}</button>`;
+		return row.log_type === "OUT" ? __("{0} checked out", [employee]) : __("{0} checked in", [employee]);
+	}
+
+	localize_duration(value) {
+		if (!value) return value || "—";
+		const match = String(value).match(/^(\d+)h\s+(\d+)m$/);
+		return match ? __("{0} h {1} m", [match[1], match[2]]) : value;
+	}
+
+	calendar_tooltip(cell) {
+		return [
+			cell.date,
+			__(cell.status),
+			cell.detail ? __(cell.detail) : "",
+			`${cell.in_time || "—"}–${cell.out_time || "—"}`,
+			this.localize_duration(cell.working_hours_label),
+			cell.late ? __("Late") : "",
+			cell.early_exit ? __("Early exit") : "",
+		].filter(Boolean).join(" · ");
 	}
 
 	empty(message) {

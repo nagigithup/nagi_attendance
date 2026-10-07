@@ -14,6 +14,15 @@
 }
 
 .nagi-attendance button { font: inherit; }
+.nagi-attendance[dir="rtl"] { direction: rtl; text-align: right; }
+.nagi-attendance[dir="rtl"] .na-stat,
+.nagi-attendance[dir="rtl"] .na-person-main,
+.nagi-attendance[dir="rtl"] .na-month-summary button { text-align: right; }
+.nagi-attendance[dir="rtl"] .na-calendar th:first-child { right: 0; left: auto; padding-right: 18px; padding-left: 4px; text-align: right; }
+.nagi-attendance[dir="rtl"] .na-timeline time,
+.nagi-attendance[dir="rtl"] .na-person-metric strong,
+.nagi-attendance[dir="rtl"] .na-drawer-metrics strong { direction: ltr; unicode-bidi: isolate; }
+.na-drawer[dir="rtl"] { direction: rtl; text-align: right; }
 .na-hero { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 26px 30px; border-radius: 22px; color: #fff; background: linear-gradient(125deg, #173c37 0%, #2f715f 68%, #8b7451 140%); box-shadow: 0 18px 42px rgba(23, 60, 55, .18); }
 .na-hero h2 { margin: 2px 0 4px; color: #fff; font-size: clamp(25px, 3vw, 36px); font-weight: 650; letter-spacing: -.03em; }
 .na-hero p { margin: 0; color: rgba(255,255,255,.76); }
