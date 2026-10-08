@@ -1,5 +1,7 @@
 app_name = "nagi_attendance"
-app_title = "Nagi Attendance"
+# This is a translation key. English and Arabic display values are defined in
+# translations/ so every Desk launcher surface uses the same requested label.
+app_title = "Attendance & Leave App"
 app_publisher = "Nagi"
 app_description = "Manager-friendly attendance and leave dashboard for Frappe HR"
 app_email = "admin@example.com"
@@ -10,20 +12,24 @@ app_license = "mit"
 
 required_apps = ["hrms"]
 
-# Open the existing manager dashboard directly when Nagi Attendance is selected.
+# Open the existing manager dashboard directly when Attendance & Leave is selected.
 # Frappe v16 uses /desk as its canonical Desk route.
 app_home = "/desk/manager-attendance"
 
-# Each item in the list will be shown as an app in the apps page
-# add_to_apps_screen = [
-# 	{
-# 		"name": "nagi_attendance",
-# 		"logo": "/assets/nagi_attendance/logo.png",
-# 		"title": "Nagi Attendance",
-# 		"route": "/nagi_attendance",
-# 		"has_permission": "nagi_attendance.api.permission.has_app_permission"
-# 	}
-# ]
+# Register the app in Frappe's modern Apps screen. A matching standard Desktop Icon fixture
+# supports sites that still use Frappe v16's legacy Desktop Icons mode.
+add_to_apps_screen = [
+	{
+		"name": "nagi_attendance",
+		# A distinct translation key keeps the dashboard heading unchanged while the
+		# app tile displays the requested English and Arabic names.
+		"title": "Attendance & Leave App",
+		"logo": "/assets/nagi_attendance/images/attendance-app.svg",
+		"route": "/desk/manager-attendance",
+		"has_permission": "nagi_attendance.api.has_app_permission",
+		"sequence_id": 30,
+	}
+]
 
 # Includes in <head>
 # ------------------

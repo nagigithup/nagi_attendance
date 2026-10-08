@@ -35,6 +35,11 @@ ATTENDANCE_FIELDS = [
 ]
 
 
+def has_app_permission() -> bool:
+	"""Use the existing Desk Page roles to decide whether its app icon is visible."""
+	return frappe.session.user != "Guest" and bool(frappe.get_doc("Page", "manager-attendance").is_permitted())
+
+
 def _require_access(*doctypes: str) -> None:
 	if frappe.session.user == "Guest":
 		frappe.throw(_("Please sign in to view Nagi Attendance."), frappe.PermissionError)

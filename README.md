@@ -18,9 +18,9 @@ bench --site your-site migrate
 bench build --app nagi_attendance
 ```
 
-Open **Nagi Attendance** from Desk to go directly to the existing Manager Attendance dashboard, or visit `/desk/manager-attendance`.
+Open **Attendance & Leave** (الحضور والانصراف) from the Desk home screen to go directly to the existing dashboard, or visit `/desk/manager-attendance`.
 
-The former `/desk/nagi-attendance` workspace route is retained only as a redirect for old bookmarks.
+The former `/desk/nagi-attendance` and `/desk/nagi-attendance/manager-attendance` routes are retained only as client-side redirects for old bookmarks. The app ships a standalone `Manager Attendance` sidebar shell whose slug matches the existing Desk Page, so Frappe keeps the canonical URL at `/desk/manager-attendance`.
 
 ## APIs
 

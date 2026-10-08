@@ -1,0 +1,17 @@
+{
+ "app": "nagi_attendance",
+ "doctype": "Dock",
+ "items": [
+  {
+   "added": 0,
+   "hidden": 0,
+   "icon": "calendar-check",
+   "link_to": "Manager Attendance",
+   "link_type": "Sidebar",
+   "title": "Manager Attendance"
+  }
+ ],
+ "name": "nagi_attendance",
+ "standard": 1,
+ "user": ""
+}

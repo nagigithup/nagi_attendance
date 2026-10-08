@@ -3,18 +3,13 @@
  "doctype": "Desktop Icon",
  "hidden": 0,
  "icon": "calendar-check",
- "icon_type": "Link",
+ "icon_type": "App",
  "idx": 30,
- "label": "Manager Attendance",
+ "label": "Attendance & Leave App",
  "link": "/desk/manager-attendance",
  "link_type": "External",
- "name": "Manager Attendance",
+ "logo_url": "/assets/nagi_attendance/images/attendance-app.svg",
+ "name": "Attendance & Leave App",
  "restrict_removal": 0,
- "roles": [
-  {"role": "HR Manager"},
-  {"role": "HR User"},
-  {"role": "System Manager"}
- ],
- "sidebar": "Nagi Attendance",
  "standard": 1
 }
