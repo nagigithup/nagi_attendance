@@ -19,8 +19,12 @@ OFFICE_MAP_URL = "https://maps.app.goo.gl/HuDpLxp7xA95nw889?g_st=ic"
 OFFICE_LATITUDE = 24.7870341
 OFFICE_LONGITUDE = 46.8051581
 TEST_GEOFENCE_RADIUS_METERS = 100
+ATTENDANCE_GO_LIVE_DATE = date(2026, 10, 7)
 LEAVE_PERIOD = "فترة الإجازات 2026 - أدن"
 LEAVE_POLICY = "سياسة الإجازات النظامية 2026 - تحتاج مراجعة"
+MANAGEMENT_DEPARTMENT = "الإدارة"
+LEGAL_DEPARTMENT = "الإدارة القانونية"
+CONFIRMED_GENDER = "Male"
 
 EMPLOYEES = (
 	{
@@ -28,14 +32,18 @@ EMPLOYEES = (
 		"email": "osama@adanlawfirm.com",
 		"designation": "Partner",
 		"roles": ("Employee", "HR User", "HR Manager", "Leave Approver"),
-		"leave_approver": None,
+		"team_attendance_access": True,
+		"department": MANAGEMENT_DEPARTMENT,
+		"leave_approver": "abdulrahman@adanlawfirm.com",
 		"shift": None,
 	},
 	{
 		"employee_name": "عبدالرحمن السلمي",
 		"email": "abdulrahman@adanlawfirm.com",
 		"designation": "Partner",
-		"roles": ("Employee", "HR User"),
+		"roles": ("Employee", "HR User", "Leave Approver"),
+		"team_attendance_access": True,
+		"department": MANAGEMENT_DEPARTMENT,
 		"leave_approver": "osama@adanlawfirm.com",
 		"shift": None,
 	},
@@ -44,6 +52,8 @@ EMPLOYEES = (
 		"email": "a.mohsen@adanlawfirm.com",
 		"designation": "Employee",
 		"roles": ("Employee",),
+		"team_attendance_access": False,
+		"department": LEGAL_DEPARTMENT,
 		"leave_approver": "osama@adanlawfirm.com",
 		"shift": "دوام المكتب 09:00-15:00",
 	},
@@ -52,6 +62,8 @@ EMPLOYEES = (
 		"email": "mohammed@adanlawfirm.com",
 		"designation": "Employee",
 		"roles": ("Employee",),
+		"team_attendance_access": False,
+		"department": LEGAL_DEPARTMENT,
 		"leave_approver": "osama@adanlawfirm.com",
 		"shift": "دوام المكتب 09:00-15:00",
 	},
@@ -60,6 +72,8 @@ EMPLOYEES = (
 		"email": "othman@adanlawfirm.com",
 		"designation": "Employee",
 		"roles": ("Employee",),
+		"team_attendance_access": False,
+		"department": LEGAL_DEPARTMENT,
 		"leave_approver": "osama@adanlawfirm.com",
 		"shift": "دوام المكتب 09:00-16:00",
 	},
@@ -76,32 +90,41 @@ LEAVE_TYPES = (
 	{"name": "إجازة بدون راتب", "is_lwp": 1},
 	{"name": "إجازة زواج", "max_leaves_allowed": 5},
 	{"name": "إجازة وفاة", "max_leaves_allowed": 5},
+	{"name": "إجازة وفاة أخ أو أخت", "max_leaves_allowed": 3},
 	{"name": "إجازة مولود", "max_leaves_allowed": 3},
-	{"name": "إجازة أمومة", "max_leaves_allowed": 0},
+	{"name": "إجازة حج", "max_leaves_allowed": 15},
+	{"name": "إجازة اختبارات", "max_leaves_allowed": 0},
+	{"name": "إجازة أمومة", "max_leaves_allowed": 84},
 )
 
 
 def execute(genders: dict[str, str] | str | None = None) -> dict:
 	"""Configure the confirmed Adan HR settings without creating duplicate records.
 
-	`genders` is keyed by employee email. Employee is not created until a confirmed
-	value is supplied because Gender is mandatory in ERPNext and must not be invented.
+	All five employees are confirmed male in the final implementation instructions.
+	`genders` remains available as an explicit, validated override for safe reuse.
 	"""
 	if isinstance(genders, str):
 		genders = frappe.parse_json(genders)
-	genders = genders or {}
+	confirmed_genders = {row["email"]: CONFIRMED_GENDER for row in EMPLOYEES}
+	confirmed_genders.update(genders or {})
 
 	report = {"created": [], "updated": [], "skipped": [], "blockers": []}
 	_ensure_company(report)
 	_ensure_settings(report)
 	_ensure_employee_flags(report)
 	_ensure_designations(report)
+	_ensure_gender(report)
+	_ensure_departments(report)
 	_ensure_holiday_list(report)
+	_ensure_holiday_list_assignment(report)
 	_ensure_shift_location(report)
 	_ensure_shift_types(report)
 	_ensure_leave_configuration(report)
 	_ensure_users(report)
-	_ensure_employees(genders, report)
+	_ensure_employees(confirmed_genders, report)
+	_ensure_manager_user_permissions(report)
+	_ensure_user_roles(report)
 	frappe.db.commit()
 	return report
 
@@ -214,6 +237,43 @@ def _ensure_designations(report: dict) -> None:
 			_record(report, "skipped", "Designation", designation)
 
 
+def _ensure_gender(report: dict) -> None:
+	if frappe.db.exists("Gender", CONFIRMED_GENDER):
+		_record(report, "skipped", "Gender", CONFIRMED_GENDER)
+		return
+	frappe.get_doc({"doctype": "Gender", "gender": CONFIRMED_GENDER}).insert(ignore_permissions=True)
+	_record(report, "created", "Gender", CONFIRMED_GENDER)
+
+
+def _ensure_departments(report: dict) -> None:
+	for department_name in (MANAGEMENT_DEPARTMENT, LEGAL_DEPARTMENT):
+		name = frappe.db.get_value(
+			"Department", {"department_name": department_name, "company": COMPANY}, "name"
+		)
+		if name:
+			_record(report, "skipped", "Department", name)
+			continue
+		doc = frappe.get_doc(
+			{
+				"doctype": "Department",
+				"department_name": department_name,
+				"company": COMPANY,
+				"parent_department": "All Departments",
+				"is_group": 0,
+			}
+		).insert(ignore_permissions=True)
+		_record(report, "created", "Department", doc.name)
+
+
+def _department_docname(department_name: str) -> str:
+	name = frappe.db.get_value(
+		"Department", {"department_name": department_name, "company": COMPANY}, "name"
+	)
+	if not name:
+		frappe.throw(f"Department was not configured: {department_name}")
+	return name
+
+
 def _holiday_rows() -> list[dict]:
 	rows = []
 	day = date(2026, 1, 1)
@@ -258,6 +318,36 @@ def _ensure_holiday_list(report: dict) -> None:
 	frappe.db.set_value("Company", COMPANY, "default_holiday_list", HOLIDAY_LIST)
 
 
+def _ensure_holiday_list_assignment(report: dict) -> None:
+	"""Use HRMS v16's effective-dated assignment model for all company employees."""
+	filters = {
+		"applicable_for": "Company",
+		"assigned_to": COMPANY,
+		"from_date": "2026-01-01",
+		"docstatus": 1,
+	}
+	name = frappe.db.get_value("Holiday List Assignment", filters, "name")
+	if name:
+		assignment = frappe.get_doc("Holiday List Assignment", name)
+		if assignment.holiday_list != HOLIDAY_LIST:
+			frappe.throw(f"A different Holiday List Assignment already exists for {COMPANY}: {name}")
+		_record(report, "skipped", "Holiday List Assignment", name)
+		return
+
+	assignment = frappe.get_doc(
+		{
+			"doctype": "Holiday List Assignment",
+			"applicable_for": "Company",
+			"assigned_to": COMPANY,
+			"holiday_list": HOLIDAY_LIST,
+			"from_date": "2026-01-01",
+		}
+	)
+	assignment.insert(ignore_permissions=True)
+	assignment.submit()
+	_record(report, "created", "Holiday List Assignment", assignment.name)
+
+
 def _ensure_shift_location(report: dict) -> None:
 	values = {
 		"location_name": OFFICE_LOCATION,
@@ -287,10 +377,11 @@ def _ensure_shift_types(report: dict) -> None:
 			"allow_check_out_after_shift_end_time": 30,
 			"working_hours_threshold_for_half_day": 0,
 			"working_hours_threshold_for_absent": 0,
-			"enable_late_entry_marking": 0,
+			"enable_late_entry_marking": 1,
+			"late_entry_grace_period": 10,
 			"enable_early_exit_marking": 0,
 			"mark_auto_attendance_on_holidays": 0,
-			"process_attendance_after": "2026-01-01",
+			"process_attendance_after": ATTENDANCE_GO_LIVE_DATE,
 			"auto_update_last_sync": 1,
 		}
 		if frappe.db.exists("Shift Type", definition["name"]):
@@ -342,14 +433,12 @@ def _ensure_leave_configuration(report: dict) -> None:
 			frappe.get_doc({"doctype": "Leave Type", **values}).insert(ignore_permissions=True)
 			_record(report, "created", "Leave Type", definition["name"])
 
-	# Keep the policy in draft and do not allocate balances until the missing employee
-	# attributes and company policy (carry-forward, paid sick-leave tiers, maternity)
-	# are confirmed.
+	# Keep the policy in draft and do not allocate balances while joining dates are
+	# provisional.  Only annual leave belongs in this annual allocation template:
+	# sick leave has statutory pay tiers and event leave is granted when the event
+	# occurs, so treating either as a reusable yearly balance would be misleading.
 	details = [
 		{"leave_type": "إجازة سنوية", "annual_allocation": 21},
-		{"leave_type": "إجازة مرضية", "annual_allocation": 120},
-		{"leave_type": "إجازة زواج", "annual_allocation": 5},
-		{"leave_type": "إجازة وفاة", "annual_allocation": 5},
 	]
 	policy_name = frappe.db.get_value("Leave Policy", {"title": LEAVE_POLICY}, "name")
 	if policy_name:
@@ -390,9 +479,38 @@ def _ensure_users(report: dict) -> None:
 				}
 			).insert(ignore_permissions=True)
 			_record(report, "created", "User", email)
+
+
+def _ensure_user_roles(report: dict) -> None:
+	"""Assign employee-dependent roles only after the linked Employee exists."""
+	for definition in EMPLOYEES:
+		user = frappe.get_doc("User", definition["email"])
 		for role in definition["roles"]:
-			if role not in frappe.get_roles(email):
+			if role not in frappe.get_roles(definition["email"]):
 				user.add_roles(role)
+				_record(report, "updated", "User Role", f"{definition['email']} / {role}")
+
+
+def _ensure_manager_user_permissions(report: dict) -> None:
+	"""Let designated managers see the ADAN team while keeping company isolation."""
+	from frappe.permissions import add_user_permission, remove_user_permission
+
+	for definition in EMPLOYEES:
+		if not definition["team_attendance_access"]:
+			continue
+		employee = frappe.db.get_value("Employee", {"user_id": definition["email"]}, "name")
+		if frappe.db.exists(
+			"User Permission",
+			{"user": definition["email"], "allow": "Employee", "for_value": employee},
+		):
+			remove_user_permission("Employee", employee, definition["email"], ignore_permissions=True)
+			_record(report, "updated", "User Permission", f"{definition['email']} / ADAN team access")
+		if not frappe.db.exists(
+			"User Permission",
+			{"user": definition["email"], "allow": "Company", "for_value": COMPANY},
+		):
+			add_user_permission("Company", COMPANY, definition["email"], ignore_permissions=True)
+			_record(report, "updated", "User Permission", f"{definition['email']} / {COMPANY}")
 
 
 def _ensure_employees(genders: dict[str, str], report: dict) -> None:
@@ -418,11 +536,13 @@ def _ensure_employees(genders: dict[str, str], report: dict) -> None:
 			"date_of_birth": "1990-01-01",
 			"date_of_joining": "2026-01-01",
 			"designation": definition["designation"],
+			"department": _department_docname(definition["department"]),
 			"holiday_list": HOLIDAY_LIST,
 			"default_shift": definition["shift"],
 			"leave_approver": definition["leave_approver"],
 			"custom_provisional_date_of_birth": 1,
 			"custom_joining_date_requires_confirmation": 1,
+			"create_user_permission": 0 if definition["team_attendance_access"] else 1,
 		}
 		name = frappe.db.get_value("Employee", {"user_id": email}, "name")
 		if name:
@@ -443,19 +563,28 @@ def _ensure_shift_assignment(employee: str, shift_type: str, report: dict) -> No
 	filters = {
 		"employee": employee,
 		"shift_type": shift_type,
-		"start_date": "2026-01-01",
 		"docstatus": 1,
+		"status": "Active",
 	}
-	if frappe.db.exists("Shift Assignment", filters):
-		_record(report, "skipped", "Shift Assignment", f"{employee} / {shift_type}")
-		return
+	assignment_name = frappe.db.get_value("Shift Assignment", filters, "name", order_by="start_date desc")
+	if assignment_name:
+		assignment = frappe.get_doc("Shift Assignment", assignment_name)
+		if getdate(assignment.start_date) == ATTENDANCE_GO_LIVE_DATE:
+			_record(report, "skipped", "Shift Assignment", f"{employee} / {shift_type}")
+			return
+
+		# Submitted start dates cannot be edited safely. Cancel and replace the
+		# assignment so native HRMS link and overlap validations remain in force.
+		assignment.cancel()
+		_record(report, "updated", "Shift Assignment", f"{assignment.name} (cancelled)")
+
 	assignment = frappe.get_doc(
 		{
 			"doctype": "Shift Assignment",
 			"employee": employee,
 			"shift_type": shift_type,
 			"shift_location": OFFICE_LOCATION,
-			"start_date": "2026-01-01",
+			"start_date": ATTENDANCE_GO_LIVE_DATE,
 			"status": "Active",
 		}
 	)

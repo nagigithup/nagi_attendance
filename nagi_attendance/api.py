@@ -43,6 +43,8 @@ def has_app_permission() -> bool:
 def _require_access(*doctypes: str) -> None:
 	if frappe.session.user == "Guest":
 		frappe.throw(_("Please sign in to view Nagi Attendance."), frappe.PermissionError)
+	if not has_app_permission():
+		frappe.throw(_("You do not have permission to view Manager Attendance."), frappe.PermissionError)
 	if not frappe.has_permission("Employee", "read"):
 		frappe.throw(_("You do not have permission to read employee attendance."), frappe.PermissionError)
 	for doctype in doctypes:
@@ -109,7 +111,12 @@ def _live_hours(logs: list[frappe._dict], as_of: datetime | None = None) -> floa
 
 
 def _holiday_map(employees: list[frappe._dict], start: date, end: date) -> dict[str, dict[str, str]]:
-	"""Resolve HRMS holiday assignments and return employee/date labels."""
+	"""Return only the holiday date/label data needed by the authorized dashboard.
+
+	The caller has already passed Employee, Attendance and Checkin permission checks.
+	Using this narrow server-side projection avoids granting HR User broad read access
+	to the Holiday List master merely to render attendance cells.
+	"""
 	from hrms.utils.holiday_list import get_holiday_list_assignments, resolve_holiday_list_assignment
 
 	assigned_to = [row.name for row in employees] + [row.company for row in employees if row.company]
@@ -292,7 +299,7 @@ def _empty_summary() -> dict[str, int]:
 
 @frappe.whitelist()
 def get_today_dashboard(date: str | None = None, employee: str | None = None, department: str | None = None):
-	_require_access("Attendance", "Employee Checkin", "Leave Application", "Holiday List")
+	_require_access("Attendance", "Employee Checkin", "Leave Application")
 	value = getdate(date or today())
 	data = _today_data(value, employee, department)
 	data["filters"] = {
@@ -323,7 +330,7 @@ def get_monthly_attendance(
 	employee: str | None = None,
 	department: str | None = None,
 ):
-	_require_access("Attendance", "Employee Checkin", "Leave Application", "Holiday List")
+	_require_access("Attendance", "Employee Checkin", "Leave Application")
 	year, month = cint(year), cint(month)
 	if not (2000 <= year <= 2100 and 1 <= month <= 12):
 		frappe.throw(_("Please select a valid month and year."))
@@ -466,41 +473,69 @@ def get_leave_dashboard(date: str | None = None):
 		base_fields,
 		"from_date asc",
 	)[:20]
-	pending = _get_rows(
-		"Leave Application", {"status": "Open", "docstatus": ["<", 2]}, base_fields, "from_date asc"
-	)
+	pending_filters = {"status": "Open", "docstatus": ["<", 2]}
+	if frappe.session.user != "Administrator":
+		pending_filters["leave_approver"] = frappe.session.user
+	pending = _get_rows("Leave Application", pending_filters, base_fields, "from_date asc")
 	for row in pending:
 		row["actions"] = _workflow_actions(row.name)
 	return {"date": str(value), "on_leave": on_leave, "upcoming": upcoming, "pending": pending}
 
 
 def _workflow_actions(name: str) -> list[str]:
-	if not get_workflow_name("Leave Application"):
-		return []
 	try:
 		doc = frappe.get_doc("Leave Application", name)
+	except frappe.DoesNotExistError:
+		return []
+	if not _is_assigned_leave_approver(doc):
+		return []
+	if not get_workflow_name("Leave Application"):
+		if doc.docstatus == 0 and doc.status == "Open":
+			return ["Approve", "Reject"]
+		return []
+	try:
 		return [row.action for row in get_transitions(doc)]
 	except (frappe.PermissionError, frappe.ValidationError):
 		return []
 
 
+def _is_assigned_leave_approver(doc) -> bool:
+	"""Enforce the Employee's assigned approver and prevent self-approval."""
+	if not doc.leave_approver or doc.leave_approver != frappe.session.user:
+		return False
+	employee_user = frappe.db.get_value("Employee", doc.employee, "user_id")
+	return employee_user != frappe.session.user
+
+
 @frappe.whitelist()
 def apply_leave_action(name: str, action: str):
 	_require_access("Leave Application")
-	from frappe.model.workflow import apply_workflow
 
 	doc = frappe.get_doc("Leave Application", name)
 	doc.check_permission("write")
 	allowed = _workflow_actions(name)
 	if action not in allowed:
 		frappe.throw(_("Workflow action {0} is not available for this leave request.").format(action))
-	updated = apply_workflow(doc, action)
+
+	if get_workflow_name("Leave Application"):
+		from frappe.model.workflow import apply_workflow
+
+		updated = apply_workflow(doc, action)
+	else:
+		status = {"Approve": "Approved", "Reject": "Rejected"}.get(action)
+		if not status:
+			frappe.throw(_("Unsupported leave action: {0}").format(action))
+		doc.check_permission("submit")
+		doc.status = status
+		doc.save()
+		doc.submit()
+		updated = doc
 	return {"name": updated.name, "status": updated.status}
 
 
 @frappe.whitelist()
 def get_employee_details(employee: str, date: str | None = None, year: int | None = None, month: int | None = None):
-	_require_access("Attendance", "Employee Checkin", "Leave Application", "Holiday List")
+	_require_access("Attendance", "Employee Checkin", "Leave Application")
 	value = getdate(date or today())
 	if not frappe.has_permission("Employee", "read", employee):
 		frappe.throw(_("Not permitted"), frappe.PermissionError)

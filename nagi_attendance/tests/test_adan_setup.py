@@ -3,7 +3,11 @@ from datetime import date
 from frappe.tests import UnitTestCase
 
 from nagi_attendance.setup.adan_law_firm import (
+	ATTENDANCE_GO_LIVE_DATE,
+	CONFIRMED_GENDER,
 	EMPLOYEES,
+	LEGAL_DEPARTMENT,
+	MANAGEMENT_DEPARTMENT,
 	OFFICE_ADDRESS,
 	OFFICE_LATITUDE,
 	OFFICE_LONGITUDE,
@@ -37,6 +41,7 @@ class TestAdanSetup(UnitTestCase):
 		)
 
 	def test_shift_assignments_match_confirmed_employee_schedule(self):
+		self.assertEqual(ATTENDANCE_GO_LIVE_DATE.isoformat(), "2026-10-07")
 		shifts = {row["name"]: (row["start_time"], row["end_time"]) for row in SHIFT_TYPES}
 		self.assertEqual(shifts["دوام المكتب 09:00-15:00"], ("09:00:00", "15:00:00"))
 		self.assertEqual(shifts["دوام المكتب 09:00-16:00"], ("09:00:00", "16:00:00"))
@@ -50,6 +55,16 @@ class TestAdanSetup(UnitTestCase):
 				"دوام المكتب 09:00-16:00",
 			],
 		)
+
+	def test_confirmed_employee_identity_and_approval_mappings(self):
+		self.assertEqual(CONFIRMED_GENDER, "Male")
+		self.assertEqual([row["department"] for row in EMPLOYEES[:2]], [MANAGEMENT_DEPARTMENT] * 2)
+		self.assertEqual([row["department"] for row in EMPLOYEES[2:]], [LEGAL_DEPARTMENT] * 3)
+		self.assertEqual(EMPLOYEES[0]["leave_approver"], "abdulrahman@adanlawfirm.com")
+		self.assertTrue(
+			all(row["leave_approver"] == "osama@adanlawfirm.com" for row in EMPLOYEES[1:])
+		)
+		self.assertIn("Leave Approver", EMPLOYEES[1]["roles"])
 
 	def test_office_geofence_uses_verified_coordinates_and_test_radius(self):
 		self.assertEqual((OFFICE_LATITUDE, OFFICE_LONGITUDE), (24.7870341, 46.8051581))

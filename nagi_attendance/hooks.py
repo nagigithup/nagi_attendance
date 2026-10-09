@@ -148,13 +148,18 @@ app_include_js = "/assets/nagi_attendance/js/nagi_attendance.js"
 # ---------------
 # Hook on document methods and events
 
-# doc_events = {
-# 	"*": {
-# 		"on_update": "method",
-# 		"on_cancel": "method",
-# 		"on_trash": "method"
-# 	}
-# }
+doc_events = {
+	"Employee Checkin": {
+		"validate": "nagi_attendance.attendance_validation.validate_mandatory_employee_checkin_location"
+	}
+}
+
+# Keep native HRMS auto-attendance for real check-in logs while the Adan
+# attendance policy is pending. Only no-log Absent generation is suppressed,
+# and only for employees of the Adan company.
+extend_doctype_class = {
+	"Shift Type": ["nagi_attendance.overrides.shift_type.AdanPresentOnlyAutoAttendanceMixin"]
+}
 
 # Scheduled Tasks
 # ---------------
