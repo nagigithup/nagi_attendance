@@ -75,7 +75,7 @@
 						<InfoRow :label="t('designation')" :value="data.employee.designation || '—'" />
 						<InfoRow :label="t('company')" :value="data.employee.company" />
 					</div>
-					<div class="card settings"><label>{{ t('language') }}<select :value="lang" @change="changeLanguage($event.target.value)"><option value="ar">{{ t('arabic') }}</option><option value="en">{{ t('english') }}</option></select></label><a class="logout" href="/api/method/logout">{{ t('logout') }}</a></div>
+					<div class="card settings"><label>{{ t('language') }}<select :value="lang" @change="changeLanguage($event.target.value)"><option value="ar">{{ t('arabic') }}</option><option value="en">{{ t('english') }}</option></select></label><button class="logout text-button" :disabled="busy" @click="logout">{{ t('logout') }}</button></div>
 				</section>
 			</main>
 
@@ -158,6 +158,22 @@ async function submitLeave() {
 }
 async function leaveAction({name,action}) { if(busy.value||!confirm(t("confirmAction")))return;busy.value=true;try{await api("apply_leave_action",{name,action},true);notify(t("success"));await load()}catch(e){notify(e.message,"error")}finally{busy.value=false} }
 async function cancelLeave(name) { if(busy.value||!confirm(t("confirmAction")))return;busy.value=true;try{await api("cancel_leave_application",{name,company:activeCompany.value},true);notify(t("success"));await load()}catch(e){notify(e.message,"error")}finally{busy.value=false} }
+async function logout() {
+	if (busy.value) return
+	busy.value = true
+	try {
+		const response = await fetch("/api/method/logout", {
+			method: "POST",
+			credentials: "same-origin",
+			headers: {"Accept":"application/json", "X-Frappe-CSRF-Token":window.csrf_token},
+		})
+		if (!response.ok) throw new Error(t("error"))
+		window.location.replace("/login?redirect-to=/attendance")
+	} catch (e) {
+		notify(e.message || t("error"), "error")
+		busy.value = false
+	}
+}
 function dateLabel(value,options={day:"numeric",month:"short",year:"numeric"}) { return value?new Intl.DateTimeFormat(locale.value,options).format(new Date(`${String(value).slice(0,10)}T12:00:00`)):"—" }
 function dayNumber(v){return dateLabel(v,{day:"numeric"})} function monthName(v){return dateLabel(v,{month:"short"})}
 function timeLabel(value){if(!value)return"—";const d=new Date(String(value).replace(" ","T"));return Number.isNaN(d.getTime())?String(value).slice(11,16):new Intl.DateTimeFormat(locale.value,{hour:"2-digit",minute:"2-digit"}).format(d)}

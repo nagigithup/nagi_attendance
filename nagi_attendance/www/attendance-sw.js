@@ -1,4 +1,4 @@
-const CACHE = "nagi-attendance-shell-v1"
+const CACHE = "nagi-attendance-shell-v2"
 const SHELL = [
 	"/assets/nagi_attendance/attendance/app.js",
 	"/assets/nagi_attendance/attendance/app.css",

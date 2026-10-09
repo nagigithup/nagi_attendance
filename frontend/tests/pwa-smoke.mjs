@@ -16,9 +16,14 @@ const bootstrap = {
 const browser = await chromium.launch({headless:true})
 try {
 	const page = await browser.newPage({viewport:{width:390,height:844},isMobile:true})
+	let logoutMethod = null
 	await page.route(`${base}/attendance`, route => route.fulfill({contentType:"text/html",body:`<!doctype html><html lang="ar" dir="rtl"><head><meta name="theme-color" content="#176B5B"><link rel="stylesheet" href="/assets/nagi_attendance/attendance/app.css"><script>window.csrf_token="test"</script><script type="module" src="/assets/nagi_attendance/attendance/app.js"></script></head><body><div id="app"></div></body></html>`}))
 	await page.route("**/api/method/nagi_attendance.mobile_api.bootstrap**", route => route.fulfill({contentType:"application/json",body:JSON.stringify({message:bootstrap})}))
 	await page.route("**/api/method/nagi_attendance.mobile_api.get_attendance_history**", route => route.fulfill({contentType:"application/json",body:JSON.stringify({message:{events:{},records:[]}})}))
+	await page.route("**/api/method/logout", route => {
+		logoutMethod = route.request().method()
+		return route.fulfill({contentType:"application/json",body:JSON.stringify({message:"Logged Out"})})
+	})
 	await page.goto(`${base}/attendance`)
 	await page.waitForSelector(".bottom-nav")
 	assert.equal(await page.locator("html").getAttribute("dir"), "rtl")
@@ -30,7 +35,12 @@ try {
 	assert.equal(await page.locator("html").getAttribute("dir"), "ltr")
 	assert.ok(await page.getByText("My Account", {exact:true}).count() >= 1)
 	assert.equal(await page.evaluate(() => document.body.scrollWidth <= window.innerWidth), true)
-	console.log("PWA smoke: mobile render, company branding, four-tab navigation, RTL/LTR and viewport passed")
+	await Promise.all([
+		page.waitForURL("**/login?redirect-to=/attendance"),
+		page.getByText("Log out", {exact:true}).click(),
+	])
+	assert.equal(logoutMethod, "POST")
+	console.log("PWA smoke: mobile render, company branding, navigation, RTL/LTR, viewport and POST logout passed")
 } finally {
 	await browser.close()
 }
