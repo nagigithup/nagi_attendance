@@ -6,6 +6,8 @@ from frappe.utils import flt, getdate
 from hrms.hr.doctype.employee_checkin.employee_checkin import CheckinRadiusExceededError
 from hrms.hr.utils import get_distance_between_coordinates
 
+from nagi_attendance.company import get_company_settings
+
 
 def validate_mandatory_employee_checkin_location(doc, method=None) -> None:
 	"""Enforce active Shift Assignment locations even when a log is off-shift.
@@ -15,9 +17,14 @@ def validate_mandatory_employee_checkin_location(doc, method=None) -> None:
 	off-shift, which would skip the native radius check. Partners have no Shift
 	Assignment and therefore remain intentionally exempt.
 	"""
-	if not frappe.db.get_single_value("HR Settings", "allow_geolocation_tracking"):
-		return
 	if not doc.employee or not doc.time:
+		return
+	company = frappe.db.get_value("Employee", doc.employee, "company", cache=True)
+	settings = get_company_settings(company) if company else frappe._dict()
+	if not (
+		frappe.db.get_single_value("HR Settings", "allow_geolocation_tracking")
+		or settings.get("enable_gps_validation")
+	):
 		return
 
 	checkin_date = getdate(doc.time)
@@ -33,15 +40,23 @@ def validate_mandatory_employee_checkin_location(doc, method=None) -> None:
 		or_filters=[["end_date", ">=", checkin_date], ["end_date", "is", "not set"]],
 		fields=["shift_type", "shift_location"],
 	)
-	if not assignments:
-		return
-
 	# Prefer the assignment resolved by HRMS when available. If the check-in is
 	# off-shift, every active assigned location remains an allowed location.
-	if doc.shift:
+	if assignments and doc.shift:
 		matching = [row for row in assignments if row.shift_type == doc.shift]
 		if matching:
 			assignments = matching
+
+	configured_names = {row.shift_location: None for row in assignments}
+	for row in settings.get("allowed_locations") or []:
+		location_name = row.get("shift_location")
+		if location_name:
+			configured_names[location_name] = flt(row.get("radius_override")) or None
+
+	if not configured_names:
+		if settings.get("enable_gps_validation"):
+			frappe.throw(_("No attendance location is configured for your company or active shift."))
+		return
 
 	if doc.latitude in (None, "") or doc.longitude in (None, ""):
 		frappe.throw(_("Latitude and longitude values are required for checking in."))
@@ -53,21 +68,26 @@ def validate_mandatory_employee_checkin_location(doc, method=None) -> None:
 		frappe.throw(_("Latitude and longitude values are required for checking in."))
 
 	configured_locations = []
-	for location_name in dict.fromkeys(row.shift_location for row in assignments):
+	for location_name, radius_override in configured_names.items():
 		location = frappe.db.get_value(
 			"Shift Location",
 			location_name,
 			["checkin_radius", "latitude", "longitude"],
 			as_dict=True,
 		)
-		if not location or flt(location.checkin_radius) <= 0:
+		if not location:
 			continue
 		if location.latitude is None or location.longitude is None:
 			frappe.throw(_("Shift Location {0} does not have valid coordinates.").format(location_name))
+		location.checkin_radius = (
+			radius_override or flt(location.checkin_radius) or flt(settings.get("default_geofence_radius"))
+		)
+		if location.checkin_radius <= 0:
+			frappe.throw(_("Shift Location {0} does not have a valid check-in radius.").format(location_name))
 		configured_locations.append(location)
 
 	if not configured_locations:
-		return
+		frappe.throw(_("No valid attendance location is configured."))
 
 	for location in configured_locations:
 		distance = get_distance_between_coordinates(

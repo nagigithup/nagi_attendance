@@ -1,0 +1,43 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "field:company",
+ "creation": "2026-10-09 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "company", "features_section", "enable_mobile_attendance", "enable_mobile_leave", "allow_attendance_history",
+  "policy_section", "enable_gps_validation", "default_geofence_radius", "attendance_start_date", "prevent_automatic_absence", "allowed_locations",
+  "branding_section", "default_language", "brand_primary_color"
+ ],
+ "fields": [
+  {"fieldname":"company","fieldtype":"Link","in_list_view":1,"label":"Company","options":"Company","reqd":1,"unique":1},
+  {"fieldname":"features_section","fieldtype":"Section Break","label":"Mobile Features"},
+  {"default":"1","fieldname":"enable_mobile_attendance","fieldtype":"Check","label":"Enable Mobile Attendance"},
+  {"default":"1","fieldname":"enable_mobile_leave","fieldtype":"Check","label":"Enable Mobile Leave"},
+  {"default":"1","fieldname":"allow_attendance_history","fieldtype":"Check","label":"Allow Employee Attendance History"},
+  {"fieldname":"policy_section","fieldtype":"Section Break","label":"Attendance Policy"},
+  {"default":"0","description":"Requires coordinates and validates them against assigned or explicitly allowed Shift Locations.","fieldname":"enable_gps_validation","fieldtype":"Check","label":"Enable GPS Validation"},
+  {"description":"Fallback only when an allowed Shift Location has no radius. Shift Location radius takes precedence.","fieldname":"default_geofence_radius","fieldtype":"Float","label":"Default Geofence Radius (meters)"},
+  {"description":"The mobile app rejects check-ins before this date. Existing records are never changed.","fieldname":"attendance_start_date","fieldtype":"Date","label":"Attendance Start Date"},
+  {"default":"0","description":"Keep native auto-attendance for logs but do not generate no-log Absent records for this company.","fieldname":"prevent_automatic_absence","fieldtype":"Check","label":"Do Not Create Automatic Absences"},
+  {"fieldname":"allowed_locations","fieldtype":"Table","label":"Additional Allowed Attendance Locations","options":"Nagi Allowed Attendance Location"},
+  {"fieldname":"branding_section","fieldtype":"Section Break","label":"Branding"},
+  {"default":"ar","fieldname":"default_language","fieldtype":"Select","label":"Default Language","options":"ar\nen"},
+  {"default":"#176B5B","fieldname":"brand_primary_color","fieldtype":"Color","label":"Brand Primary Color"}
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-09 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Nagi Attendance",
+ "name": "Nagi Attendance Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {"create":1,"delete":1,"email":1,"export":1,"print":1,"read":1,"report":1,"role":"System Manager","share":1,"write":1},
+  {"create":1,"email":1,"export":1,"print":1,"read":1,"report":1,"role":"HR Manager","share":1,"write":1}
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+	"states": []
+}

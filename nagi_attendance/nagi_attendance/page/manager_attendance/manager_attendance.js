@@ -10,6 +10,11 @@ class NagiAttendance {
 			title: __("Nagi Attendance"),
 			single_column: true,
 		});
+		if (frappe.user.has_role(["System Manager", "HR Manager"])) {
+			this.page.add_menu_item(__("Company Attendance Settings"), () =>
+				frappe.set_route("List", "Nagi Attendance Settings")
+			);
+		}
 		this.state = {
 			tab: "today",
 			date: frappe.datetime.get_today(),

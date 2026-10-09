@@ -154,11 +154,10 @@ doc_events = {
 	}
 }
 
-# Keep native HRMS auto-attendance for real check-in logs while the Adan
-# attendance policy is pending. Only no-log Absent generation is suppressed,
-# and only for employees of the Adan company.
+# Keep native HRMS auto-attendance for real check-in logs. Company policy may
+# suppress only no-log Absent generation without changing historical records.
 extend_doctype_class = {
-	"Shift Type": ["nagi_attendance.overrides.shift_type.AdanPresentOnlyAutoAttendanceMixin"]
+	"Shift Type": ["nagi_attendance.overrides.shift_type.CompanyAttendancePolicyMixin"]
 }
 
 # Scheduled Tasks

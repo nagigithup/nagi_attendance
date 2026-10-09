@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+		<meta name="theme-color" content="#176B5B" />
+		<meta name="apple-mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+		<meta name="apple-mobile-web-app-title" content="Nagi Attendance" />
+		<link rel="manifest" href="/assets/nagi_attendance/attendance/manifest.webmanifest" />
+		<link rel="icon" href="/assets/nagi_attendance/images/attendance-app.svg" />
+		<link rel="apple-touch-icon" href="/assets/nagi_attendance/images/attendance-app-192.png" />
+		<title>Nagi Attendance &amp; Leave</title>
+		<script>window.csrf_token={{ csrf_token | tojson }};window.nagi_boot={{ boot_json | safe }};</script>
+		<script type="module" crossorigin src="/assets/nagi_attendance/attendance/app.js"></script>
+		<link rel="stylesheet" crossorigin href="/assets/nagi_attendance/attendance/app.css" />
+	</head>
+	<body><div id="app"></div></body>
+</html>

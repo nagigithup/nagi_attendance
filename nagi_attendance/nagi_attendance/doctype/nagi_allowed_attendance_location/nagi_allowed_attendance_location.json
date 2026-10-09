@@ -1,0 +1,24 @@
+{
+ "actions": [],
+ "creation": "2026-10-09 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": ["shift_location", "radius_override"],
+ "fields": [
+  {"fieldname":"shift_location","fieldtype":"Link","in_list_view":1,"label":"Shift Location","options":"Shift Location","reqd":1},
+  {"description":"Optional. The Shift Location radius or company fallback is used when empty.","fieldname":"radius_override","fieldtype":"Float","in_list_view":1,"label":"Radius Override (meters)"}
+ ],
+ "index_web_pages_for_search": 0,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-10-09 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Nagi Attendance",
+ "name": "Nagi Allowed Attendance Location",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

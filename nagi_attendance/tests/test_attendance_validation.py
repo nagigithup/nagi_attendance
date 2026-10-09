@@ -27,10 +27,16 @@ class TestMandatoryCheckinLocation(UnitTestCase):
 		)
 
 	def validate(self):
+		def get_value(doctype, name, fields, **kwargs):
+			if doctype == "Employee":
+				return "Test Company"
+			return self.location
+
 		with (
 			patch("nagi_attendance.attendance_validation.frappe.db.get_single_value", return_value=1),
 			patch("nagi_attendance.attendance_validation.frappe.get_all", return_value=[self.assignment]),
-			patch("nagi_attendance.attendance_validation.frappe.db.get_value", return_value=self.location),
+			patch("nagi_attendance.attendance_validation.frappe.db.get_value", side_effect=get_value),
+			patch("nagi_attendance.attendance_validation.get_company_settings", return_value=frappe._dict(allowed_locations=[])),
 		):
 			validate_mandatory_employee_checkin_location(self.doc)
 
@@ -51,5 +57,24 @@ class TestMandatoryCheckinLocation(UnitTestCase):
 		with (
 			patch("nagi_attendance.attendance_validation.frappe.db.get_single_value", return_value=1),
 			patch("nagi_attendance.attendance_validation.frappe.get_all", return_value=[]),
+		):
+			validate_mandatory_employee_checkin_location(self.doc)
+
+	def test_company_fallback_radius_is_used_when_location_radius_is_empty(self):
+		self.doc.latitude = 24.7890
+		location = frappe._dict(checkin_radius=0, latitude=24.7870341, longitude=46.8051581)
+		def get_value(doctype, name, fields, **kwargs):
+			return "Company B" if doctype == "Employee" else location
+
+		settings = frappe._dict(
+			enable_gps_validation=1,
+			default_geofence_radius=500,
+			allowed_locations=[],
+		)
+		with (
+			patch("nagi_attendance.attendance_validation.frappe.db.get_single_value", return_value=0),
+			patch("nagi_attendance.attendance_validation.frappe.get_all", return_value=[self.assignment]),
+			patch("nagi_attendance.attendance_validation.frappe.db.get_value", side_effect=get_value),
+			patch("nagi_attendance.attendance_validation.get_company_settings", return_value=settings),
 		):
 			validate_mandatory_employee_checkin_location(self.doc)

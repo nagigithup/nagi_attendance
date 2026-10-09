@@ -2,8 +2,7 @@ from unittest.mock import patch
 
 from frappe.tests import UnitTestCase
 
-from nagi_attendance.overrides.shift_type import AdanPresentOnlyAutoAttendanceMixin
-from nagi_attendance.setup.adan_law_firm import COMPANY
+from nagi_attendance.overrides.shift_type import CompanyAttendancePolicyMixin
 
 
 class _NativeShiftTypeStub:
@@ -20,16 +19,18 @@ class _NativeShiftTypeStub:
 		return "native-half-day"
 
 
-class _ShiftTypeUnderTest(AdanPresentOnlyAutoAttendanceMixin, _NativeShiftTypeStub):
+class _ShiftTypeUnderTest(CompanyAttendancePolicyMixin, _NativeShiftTypeStub):
 	pass
 
 
-class TestAdanPresentOnlyAutoAttendance(UnitTestCase):
-	def test_adan_employee_does_not_generate_absence_without_checkins(self):
+class TestCompanyAttendancePolicy(UnitTestCase):
+	def test_configured_company_does_not_generate_absence_without_checkins(self):
 		shift = _ShiftTypeUnderTest()
-		with patch(
-			"nagi_attendance.overrides.shift_type.frappe.db.get_value", return_value=COMPANY
+		with (
+			patch("nagi_attendance.overrides.shift_type.frappe.db.get_value", return_value="Company A"),
+			patch("nagi_attendance.overrides.shift_type.get_company_settings") as settings,
 		):
+			settings.return_value.prevent_automatic_absence = 1
 			self.assertIsNone(shift.mark_absent_for_dates_with_no_attendance("HR-EMP-00003"))
 			self.assertIsNone(shift.mark_absent_for_half_day_dates("HR-EMP-00003"))
 
@@ -38,9 +39,11 @@ class TestAdanPresentOnlyAutoAttendance(UnitTestCase):
 
 	def test_other_companies_keep_native_hrms_absence_processing(self):
 		shift = _ShiftTypeUnderTest()
-		with patch(
-			"nagi_attendance.overrides.shift_type.frappe.db.get_value", return_value="Other Company"
+		with (
+			patch("nagi_attendance.overrides.shift_type.frappe.db.get_value", return_value="Company B"),
+			patch("nagi_attendance.overrides.shift_type.get_company_settings") as settings,
 		):
+			settings.return_value.prevent_automatic_absence = 0
 			self.assertEqual(
 				shift.mark_absent_for_dates_with_no_attendance("HR-EMP-OTHER"), "native-no-log"
 			)
