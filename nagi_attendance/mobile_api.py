@@ -224,8 +224,17 @@ def get_attendance_history(company: str | None = None, from_date: str | None = N
 	events = {str(value): status for value, status in attendance.items()}
 	for value in holidays:
 		events.setdefault(str(value), "Holiday")
+	checkin_start = _day_bounds(start)[0]
+	checkin_end = _day_bounds(end)[1]
 	return {
 		"events": events,
+		"checkins": frappe.get_list(
+			"Employee Checkin",
+			filters={"employee": employee.name, "time": ["between", [checkin_start, checkin_end]]},
+			fields=["name", "time", "log_type", "shift"],
+			order_by="time desc, creation desc, name desc",
+			limit_page_length=0,
+		),
 		"records": frappe.get_list(
 			"Attendance",
 			filters={"employee": employee.name, "attendance_date": ["between", [start, end]], "docstatus": 1},

@@ -12,6 +12,15 @@ const bootstrap = {
 	leave: {balances:{"Annual Leave":{allocated_leaves:20,balance_leaves:12}},types:["Annual Leave"],applications:[],upcoming:[],pending_approvals:[],configuration_error:null},
 	languages:["ar","en"]
 }
+const historyCheckins = [
+	{name:"HISTORY-4",time:"2026-10-10 20:30:00",log_type:"OUT",shift:null},
+	{name:"HISTORY-3",time:"2026-10-10 12:00:00",log_type:"IN",shift:"09:00–17:00"},
+	{name:"HISTORY-2",time:"2026-10-10 12:00:00",log_type:"OUT",shift:"09:00–17:00"},
+	{name:"HISTORY-1",time:"2026-10-10 08:15:00",log_type:"IN",shift:"09:00–17:00"},
+]
+const dailyAttendance = [
+	{name:"ATT-1",attendance_date:"2026-10-10",status:"Present",shift:"09:00–17:00",in_time:"2026-10-10 08:15:00",out_time:"2026-10-10 20:30:00",late_entry:0},
+]
 
 const browser = await chromium.launch({headless:true})
 try {
@@ -19,6 +28,7 @@ try {
 	let logoutMethod = null
 	let nextAction = "IN"
 	let lastLog = null
+	let includeDailyAttendance = false
 	const attendanceActions = []
 	const dialogs = []
 	page.on("dialog", async dialog => {
@@ -36,7 +46,7 @@ try {
 		nextAction = action === "IN" ? "OUT" : "IN"
 		return route.fulfill({contentType:"application/json",body:JSON.stringify({message:lastLog})})
 	})
-	await page.route("**/api/method/nagi_attendance.mobile_api.get_attendance_history**", route => route.fulfill({contentType:"application/json",body:JSON.stringify({message:{events:{},records:[]}})}))
+	await page.route("**/api/method/nagi_attendance.mobile_api.get_attendance_history**", route => route.fulfill({contentType:"application/json",body:JSON.stringify({message:{events:{},checkins:historyCheckins,records:includeDailyAttendance?dailyAttendance:[]}})}))
 	await page.route("**/api/method/logout", route => {
 		logoutMethod = route.request().method()
 		return route.fulfill({contentType:"application/json",body:JSON.stringify({message:"Logged Out"})})
@@ -47,6 +57,7 @@ try {
 	assert.match(await page.locator(".brand strong").innerText(), /شركة الاختبار/)
 	assert.equal(await page.locator(".bottom-nav button").count(), 4)
 	await page.waitForFunction(async () => Boolean(await navigator.serviceWorker.getRegistration("/attendance")))
+	await page.waitForFunction(async () => (await caches.keys()).includes("nagi-attendance-shell-v4"))
 	const attendanceButton = page.locator(".check-button")
 	assert.equal(await attendanceButton.innerText(), "تسجيل الحضور")
 	await attendanceButton.click()
@@ -58,11 +69,25 @@ try {
 	assert.equal(await page.locator(".hero-time").innerText(), expectedArabicTime)
 	assert.deepEqual(attendanceActions, ["IN"])
 	assert.deepEqual(dialogs, [])
+	await page.getByText("الحضور", {exact:true}).last().click()
+	await page.getByText("حركات الحضور والانصراف", {exact:true}).waitFor()
+	assert.equal(await page.locator(".checkin-record").count(), 4)
+	assert.deepEqual(await page.locator(".checkin-record .grow strong").allInnerTexts(), ["تسجيل الانصراف","تسجيل الحضور","تسجيل الانصراف","تسجيل الحضور"])
+	assert.match(await page.locator(".checkin-record").first().innerText(), /خارج الوردية/)
+	const expectedHistoryTime = new Intl.DateTimeFormat("ar-SA", {hour:"2-digit",minute:"2-digit"}).format(new Date("2026-10-10T20:30:00"))
+	assert.equal(await page.locator(".checkin-record .times").first().innerText(), expectedHistoryTime)
+	assert.equal(await page.getByText("لا توجد سجلات حضور لهذه الفترة.", {exact:true}).count(), 0)
+	includeDailyAttendance = true
+	await page.locator(".page-title button").click()
+	await page.getByText("الحضور اليومي المحتسب", {exact:true}).waitFor()
 	await page.getByText("حسابي", {exact:true}).click()
 	await page.selectOption(".settings select", "en")
 	assert.equal(await page.locator("html").getAttribute("dir"), "ltr")
 	assert.ok(await page.getByText("My Account", {exact:true}).count() >= 1)
 	assert.equal(await page.evaluate(() => document.body.scrollWidth <= window.innerWidth), true)
+	await page.getByText("Attendance", {exact:true}).last().click()
+	assert.ok(await page.getByText("Check-in activity", {exact:true}).count() >= 1)
+	assert.deepEqual(await page.locator(".checkin-record .grow strong").allInnerTexts(), ["Check Out","Check In","Check Out","Check In"])
 	await page.getByText("Home", {exact:true}).click()
 	assert.equal(await attendanceButton.innerText(), "Check Out")
 	await attendanceButton.click()
@@ -80,7 +105,7 @@ try {
 		page.getByText("Log out", {exact:true}).click(),
 	])
 	assert.equal(logoutMethod, "POST")
-	console.log("PWA smoke: Arabic Check In, English Check Out, loading lock, no confirmation dialog, navigation and POST logout passed")
+	console.log("PWA smoke: bilingual check-in history, Arabic Check In, English Check Out, loading lock, no confirmation dialog, navigation and POST logout passed")
 } finally {
 	await browser.close()
 }

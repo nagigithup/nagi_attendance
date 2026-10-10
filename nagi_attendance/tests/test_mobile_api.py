@@ -13,6 +13,7 @@ from nagi_attendance.mobile_api import (
 	_today_summary,
 	bootstrap,
 	create_checkin,
+	get_attendance_history,
 )
 
 
@@ -365,3 +366,42 @@ class TestMobileSecurity(IntegrationTestCase):
 		self.assertEqual(summary["last_log"].name, checkout["name"])
 		self.assertEqual(str(summary["last_log"].time), checkout["time"])
 		self.assertEqual(summary["next_action"], "IN")
+
+	def test_attendance_history_returns_all_checkins_in_deterministic_order(self):
+		frappe.set_user("Administrator")
+		company = frappe.db.get_value("Employee", "HR-EMP-00003", "company")
+		attendance_count = frappe.db.count("Attendance", {"employee": "HR-EMP-00003"})
+
+		def make_checkin(employee, log_type, value):
+			return frappe.get_doc(
+				{
+					"doctype": "Employee Checkin",
+					"employee": employee,
+					"log_type": log_type,
+					"time": value,
+					"latitude": 24.7870341,
+					"longitude": 46.8051581,
+					"skip_auto_attendance": 1,
+				}
+			).insert()
+
+		own = [
+			make_checkin("HR-EMP-00003", "IN", "2026-10-08 08:15:00"),
+			make_checkin("HR-EMP-00003", "OUT", "2026-10-08 12:00:00"),
+			make_checkin("HR-EMP-00003", "IN", "2026-10-08 12:00:00"),
+			make_checkin("HR-EMP-00003", "OUT", "2026-10-08 20:30:00"),
+		]
+		other_employee = make_checkin("HR-EMP-00004", "IN", "2026-10-08 10:00:00")
+		outside_range = make_checkin("HR-EMP-00003", "IN", "2026-10-09 00:00:00")
+
+		frappe.set_user("a.mohsen@adanlawfirm.com")
+		result = get_attendance_history(company=company, from_date="2026-10-08", to_date="2026-10-08")
+
+		expected = sorted(own, key=lambda row: (row.time, row.creation, row.name), reverse=True)
+		self.assertEqual([row.name for row in result["checkins"]], [row.name for row in expected])
+		self.assertEqual([row.log_type for row in result["checkins"]], ["OUT", "IN", "OUT", "IN"])
+		self.assertEqual(str(result["checkins"][0].time), "2026-10-08 20:30:00")
+		self.assertNotIn(other_employee.name, [row.name for row in result["checkins"]])
+		self.assertNotIn(outside_range.name, [row.name for row in result["checkins"]])
+		self.assertIn("records", result)
+		self.assertEqual(frappe.db.count("Attendance", {"employee": "HR-EMP-00003"}), attendance_count)
