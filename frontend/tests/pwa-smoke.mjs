@@ -18,6 +18,7 @@ try {
 	const page = await browser.newPage({viewport:{width:390,height:844},isMobile:true})
 	let logoutMethod = null
 	let nextAction = "IN"
+	let lastLog = null
 	const attendanceActions = []
 	const dialogs = []
 	page.on("dialog", async dialog => {
@@ -25,13 +26,15 @@ try {
 		await dialog.dismiss()
 	})
 	await page.route(`${base}/attendance`, route => route.fulfill({contentType:"text/html",body:`<!doctype html><html lang="ar" dir="rtl"><head><meta name="theme-color" content="#176B5B"><link rel="stylesheet" href="/assets/nagi_attendance/attendance/app.css"><script>window.csrf_token="test"</script><script type="module" src="/assets/nagi_attendance/attendance/app.js"></script></head><body><div id="app"></div></body></html>`}))
-	await page.route("**/api/method/nagi_attendance.mobile_api.bootstrap**", route => route.fulfill({contentType:"application/json",body:JSON.stringify({message:{...bootstrap,today:{...bootstrap.today,next_action:nextAction,status:nextAction === "IN" ? "Not Checked In" : "Checked In"}}})}))
+	await page.route("**/api/method/nagi_attendance.mobile_api.bootstrap**", route => route.fulfill({contentType:"application/json",body:JSON.stringify({message:{...bootstrap,today:{...bootstrap.today,logs:lastLog?[lastLog]:[],last_log:lastLog,next_action:nextAction,status:nextAction === "IN" ? "Not Checked In" : "Checked In"}}})}))
 	await page.route("**/api/method/nagi_attendance.mobile_api.create_checkin", async route => {
 		const action = route.request().postDataJSON().log_type
 		attendanceActions.push(action)
 		await new Promise(resolve => setTimeout(resolve, 200))
+		const recordedTime = action === "IN" ? "2026-10-10 09:15:00" : "2026-10-10 17:05:00"
+		lastLog = {name:`LOG-${attendanceActions.length}`,log_type:action,time:recordedTime,shift:"09:00–17:00"}
 		nextAction = action === "IN" ? "OUT" : "IN"
-		return route.fulfill({contentType:"application/json",body:JSON.stringify({message:{name:`LOG-${attendanceActions.length}`}})})
+		return route.fulfill({contentType:"application/json",body:JSON.stringify({message:lastLog})})
 	})
 	await page.route("**/api/method/nagi_attendance.mobile_api.get_attendance_history**", route => route.fulfill({contentType:"application/json",body:JSON.stringify({message:{events:{},records:[]}})}))
 	await page.route("**/api/method/logout", route => {
@@ -51,6 +54,8 @@ try {
 	assert.equal(await attendanceButton.innerText(), "جارٍ التحميل…")
 	await page.getByText("تمت العملية بنجاح.", {exact:true}).waitFor()
 	await page.getByText("تسجيل الانصراف", {exact:true}).waitFor()
+	const expectedArabicTime = new Intl.DateTimeFormat("ar-SA", {hour:"2-digit",minute:"2-digit"}).format(new Date("2026-10-10T09:15:00"))
+	assert.equal(await page.locator(".hero-time").innerText(), expectedArabicTime)
 	assert.deepEqual(attendanceActions, ["IN"])
 	assert.deepEqual(dialogs, [])
 	await page.getByText("حسابي", {exact:true}).click()
@@ -65,6 +70,8 @@ try {
 	assert.equal(await attendanceButton.innerText(), "Loading…")
 	await page.getByText("Completed successfully.", {exact:true}).waitFor()
 	await page.getByText("Check In", {exact:true}).waitFor()
+	const expectedEnglishTime = new Intl.DateTimeFormat("en-GB", {hour:"2-digit",minute:"2-digit"}).format(new Date("2026-10-10T17:05:00"))
+	assert.equal(await page.locator(".hero-time").innerText(), expectedEnglishTime)
 	assert.deepEqual(attendanceActions, ["IN", "OUT"])
 	assert.deepEqual(dialogs, [])
 	await page.getByText("My Account", {exact:true}).click()

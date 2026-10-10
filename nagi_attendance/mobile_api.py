@@ -5,7 +5,7 @@ from datetime import datetime, time
 import frappe
 from frappe import _
 from frappe.model.workflow import apply_workflow, get_transitions, get_workflow_name
-from frappe.utils import add_months, cint, flt, getdate, now_datetime, today
+from frappe.utils import add_months, cint, flt, get_datetime, getdate, now_datetime, today
 
 from nagi_attendance.company import (
 	company_brand,
@@ -19,6 +19,42 @@ from nagi_attendance.company import (
 def _day_bounds(value):
 	value = getdate(value)
 	return datetime.combine(value, time.min), datetime.combine(value, time.max)
+
+
+def _normalize_log_type(value) -> str:
+	return str(value or "").strip().upper()
+
+
+def _next_checkin_action(last) -> str:
+	return "OUT" if last and _normalize_log_type(last.log_type) == "IN" else "IN"
+
+
+def _attendance_window(employee: str, value) -> frappe._dict:
+	from hrms.hr.doctype.shift_assignment.shift_assignment import get_actual_start_end_datetime_of_shift
+
+	value = get_datetime(value)
+	shift = get_actual_start_end_datetime_of_shift(employee, value, consider_default_shift=True)
+	if shift:
+		return frappe._dict(
+			start=shift.actual_start,
+			end=shift.actual_end,
+			attendance_date=getdate(shift.start_datetime),
+		)
+	start, end = _day_bounds(value)
+	return frappe._dict(start=start, end=end, attendance_date=getdate(value))
+
+
+def _attendance_state(employee: str, value, *, for_update: bool = False) -> frappe._dict:
+	window = _attendance_window(employee, value)
+	last = frappe.db.get_value(
+		"Employee Checkin",
+		{"employee": employee, "time": ("between", [window.start, window.end])},
+		["name", "log_type", "time"],
+		as_dict=True,
+		order_by="time desc, creation desc, name desc",
+		for_update=for_update,
+	)
+	return frappe._dict(window=window, last=last, next_action=_next_checkin_action(last))
 
 
 def _settings_payload(settings) -> dict:
@@ -68,32 +104,34 @@ def _active_shift(employee: frappe._dict, value=None) -> frappe._dict | None:
 
 
 def _today_summary(employee: frappe._dict) -> dict:
-	value = getdate(today())
-	start, end = _day_bounds(value)
+	server_time = now_datetime()
+	value = getdate(server_time)
+	state = _attendance_state(employee.name, server_time)
 	attendance = frappe.get_list(
 		"Attendance",
-		filters={"employee": employee.name, "attendance_date": value, "docstatus": 1},
+		filters={"employee": employee.name, "attendance_date": state.window.attendance_date, "docstatus": 1},
 		fields=["name", "status", "in_time", "out_time", "working_hours", "late_entry", "early_exit", "shift"],
 		limit=1,
 	)
 	logs = frappe.get_list(
 		"Employee Checkin",
-		filters={"employee": employee.name, "time": ["between", [start, end]]},
+		filters={"employee": employee.name, "time": ["between", [state.window.start, state.window.end]]},
 		fields=["name", "time", "log_type", "shift", "latitude", "longitude"],
-		order_by="time asc",
+		order_by="time asc, creation asc, name asc",
 		limit_page_length=0,
 	)
 	row = attendance[0] if attendance else None
-	last = logs[-1] if logs else None
-	status = row.status if row else ("Checked In" if last and last.log_type == "IN" else "Not Checked In")
+	last = next((log for log in reversed(logs) if state.last and log.name == state.last.name), state.last)
+	next_action = state.next_action
+	status = row.status if row else ("Checked In" if next_action == "OUT" else "Not Checked In")
 	return {
 		"date": str(value),
 		"status": status,
 		"attendance": row,
 		"logs": logs,
 		"last_log": last,
-		"next_action": "OUT" if last and last.log_type == "IN" else "IN",
-		"shift": _active_shift(employee, value),
+		"next_action": next_action,
+		"shift": _active_shift(employee, state.window.attendance_date),
 	}
 
 
@@ -209,17 +247,14 @@ def create_checkin(log_type: str, latitude=None, longitude=None, accuracy=None, 
 	server_time = now_datetime()
 	if settings.attendance_start_date and getdate(server_time) < getdate(settings.attendance_start_date):
 		frappe.throw(_("Mobile attendance is not available before {0}.").format(settings.attendance_start_date))
-	log_type = (log_type or "").upper()
+	log_type = _normalize_log_type(log_type)
 	if log_type not in {"IN", "OUT"}:
 		frappe.throw(_("Invalid attendance action."))
-	last = frappe.get_list(
-		"Employee Checkin",
-		filters={"employee": employee.name},
-		fields=["name", "log_type", "time"],
-		order_by="time desc",
-		limit=1,
-	)
-	expected = "OUT" if last and last[0].log_type == "IN" else "IN"
+	# Serialize state transitions per employee. The following locking read is a
+	# current read, so a request waiting here sees a concurrent request's commit.
+	frappe.db.get_value("Employee", employee.name, "name", for_update=True)
+	state = _attendance_state(employee.name, server_time, for_update=True)
+	expected = state.next_action
 	if log_type != expected:
 		frappe.throw(_("Your attendance changed. Refresh and try again."))
 	gps_required = bool(

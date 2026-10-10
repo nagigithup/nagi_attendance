@@ -27,6 +27,8 @@ class TestCompanyConfiguration(UnitTestCase):
 		self.assertEqual(brand_a["primary_color"], "#112233")
 		self.assertIsNone(brand_b["logo"])
 		self.assertEqual(brand_b["primary_color"], "#445566")
+		self.assertEqual(brand_a["timezone"], "Asia/Dubai")
+		self.assertEqual(brand_b["timezone"], "Asia/Dubai")
 
 	def test_company_selector_rejects_unlinked_company(self):
 		employees = [frappe._dict(name="EMP-A", company="Company A")]
