@@ -17,8 +17,22 @@ const browser = await chromium.launch({headless:true})
 try {
 	const page = await browser.newPage({viewport:{width:390,height:844},isMobile:true})
 	let logoutMethod = null
+	let nextAction = "IN"
+	const attendanceActions = []
+	const dialogs = []
+	page.on("dialog", async dialog => {
+		dialogs.push(dialog.type())
+		await dialog.dismiss()
+	})
 	await page.route(`${base}/attendance`, route => route.fulfill({contentType:"text/html",body:`<!doctype html><html lang="ar" dir="rtl"><head><meta name="theme-color" content="#176B5B"><link rel="stylesheet" href="/assets/nagi_attendance/attendance/app.css"><script>window.csrf_token="test"</script><script type="module" src="/assets/nagi_attendance/attendance/app.js"></script></head><body><div id="app"></div></body></html>`}))
-	await page.route("**/api/method/nagi_attendance.mobile_api.bootstrap**", route => route.fulfill({contentType:"application/json",body:JSON.stringify({message:bootstrap})}))
+	await page.route("**/api/method/nagi_attendance.mobile_api.bootstrap**", route => route.fulfill({contentType:"application/json",body:JSON.stringify({message:{...bootstrap,today:{...bootstrap.today,next_action:nextAction,status:nextAction === "IN" ? "Not Checked In" : "Checked In"}}})}))
+	await page.route("**/api/method/nagi_attendance.mobile_api.create_checkin", async route => {
+		const action = route.request().postDataJSON().log_type
+		attendanceActions.push(action)
+		await new Promise(resolve => setTimeout(resolve, 200))
+		nextAction = action === "IN" ? "OUT" : "IN"
+		return route.fulfill({contentType:"application/json",body:JSON.stringify({message:{name:`LOG-${attendanceActions.length}`}})})
+	})
 	await page.route("**/api/method/nagi_attendance.mobile_api.get_attendance_history**", route => route.fulfill({contentType:"application/json",body:JSON.stringify({message:{events:{},records:[]}})}))
 	await page.route("**/api/method/logout", route => {
 		logoutMethod = route.request().method()
@@ -30,17 +44,36 @@ try {
 	assert.match(await page.locator(".brand strong").innerText(), /شركة الاختبار/)
 	assert.equal(await page.locator(".bottom-nav button").count(), 4)
 	await page.waitForFunction(async () => Boolean(await navigator.serviceWorker.getRegistration("/attendance")))
+	const attendanceButton = page.locator(".check-button")
+	assert.equal(await attendanceButton.innerText(), "تسجيل الحضور")
+	await attendanceButton.click()
+	assert.equal(await attendanceButton.isDisabled(), true)
+	assert.equal(await attendanceButton.innerText(), "جارٍ التحميل…")
+	await page.getByText("تمت العملية بنجاح.", {exact:true}).waitFor()
+	await page.getByText("تسجيل الانصراف", {exact:true}).waitFor()
+	assert.deepEqual(attendanceActions, ["IN"])
+	assert.deepEqual(dialogs, [])
 	await page.getByText("حسابي", {exact:true}).click()
 	await page.selectOption(".settings select", "en")
 	assert.equal(await page.locator("html").getAttribute("dir"), "ltr")
 	assert.ok(await page.getByText("My Account", {exact:true}).count() >= 1)
 	assert.equal(await page.evaluate(() => document.body.scrollWidth <= window.innerWidth), true)
+	await page.getByText("Home", {exact:true}).click()
+	assert.equal(await attendanceButton.innerText(), "Check Out")
+	await attendanceButton.click()
+	assert.equal(await attendanceButton.isDisabled(), true)
+	assert.equal(await attendanceButton.innerText(), "Loading…")
+	await page.getByText("Completed successfully.", {exact:true}).waitFor()
+	await page.getByText("Check In", {exact:true}).waitFor()
+	assert.deepEqual(attendanceActions, ["IN", "OUT"])
+	assert.deepEqual(dialogs, [])
+	await page.getByText("My Account", {exact:true}).click()
 	await Promise.all([
 		page.waitForURL("**/login?redirect-to=/attendance"),
 		page.getByText("Log out", {exact:true}).click(),
 	])
 	assert.equal(logoutMethod, "POST")
-	console.log("PWA smoke: mobile render, company branding, navigation, RTL/LTR, viewport and POST logout passed")
+	console.log("PWA smoke: Arabic Check In, English Check Out, loading lock, no confirmation dialog, navigation and POST logout passed")
 } finally {
 	await browser.close()
 }

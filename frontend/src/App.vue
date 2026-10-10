@@ -137,7 +137,7 @@ function getPosition() {
 	})
 }
 async function checkin(action) {
-	if(busy.value || !confirm(t("confirmAction"))) return
+	if(busy.value) return
 	busy.value=true
 	try {
 		let coords={}
