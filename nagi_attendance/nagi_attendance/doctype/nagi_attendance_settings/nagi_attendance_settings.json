@@ -8,6 +8,7 @@
  "field_order": [
   "company", "features_section", "enable_mobile_attendance", "enable_mobile_leave", "allow_attendance_history",
   "policy_section", "enable_gps_validation", "default_geofence_radius", "attendance_start_date", "prevent_automatic_absence", "allowed_locations",
+  "reporting_section", "default_reporting_department",
   "branding_section", "default_language", "brand_primary_color"
  ],
  "fields": [
@@ -22,6 +23,8 @@
   {"description":"The mobile app rejects check-ins before this date. Existing records are never changed.","fieldname":"attendance_start_date","fieldtype":"Date","label":"Attendance Start Date"},
   {"default":"0","description":"Keep native auto-attendance for logs but do not generate no-log Absent records for this company.","fieldname":"prevent_automatic_absence","fieldtype":"Check","label":"Do Not Create Automatic Absences"},
   {"fieldname":"allowed_locations","fieldtype":"Table","label":"Additional Allowed Attendance Locations","options":"Nagi Allowed Attendance Location"},
+  {"fieldname":"reporting_section","fieldtype":"Section Break","label":"Reporting"},
+  {"description":"Initial department filter for the Manager Attendance dashboard. This does not grant access or change HRMS permissions.","fieldname":"default_reporting_department","fieldtype":"Link","label":"Default Reporting Department","options":"Department"},
   {"fieldname":"branding_section","fieldtype":"Section Break","label":"Branding"},
   {"default":"ar","fieldname":"default_language","fieldtype":"Select","label":"Default Language","options":"ar\nen"},
   {"default":"#176B5B","fieldname":"brand_primary_color","fieldtype":"Color","label":"Brand Primary Color"}

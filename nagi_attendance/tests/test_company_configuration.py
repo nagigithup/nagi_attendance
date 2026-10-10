@@ -4,9 +4,25 @@ import frappe
 from frappe.tests import UnitTestCase
 
 from nagi_attendance.company import company_brand, get_current_employee
+from nagi_attendance.nagi_attendance.doctype.nagi_attendance_settings.nagi_attendance_settings import (
+	NagiAttendanceSettings,
+)
 
 
 class TestCompanyConfiguration(UnitTestCase):
+	def test_default_reporting_department_must_match_company(self):
+		doc = frappe._dict(
+			company="Company A",
+			brand_primary_color="#176B5B",
+			default_geofence_radius=0,
+			default_reporting_department="Legal - B",
+		)
+		with (
+			patch("nagi_attendance.nagi_attendance.doctype.nagi_attendance_settings.nagi_attendance_settings.frappe.db.get_value", return_value="Company B"),
+			self.assertRaises(frappe.ValidationError),
+		):
+			NagiAttendanceSettings.validate(doc)
+
 	def test_two_companies_return_separate_branding(self):
 		companies = {
 			"Company A": frappe._dict(name="Company A", abbr="A", company_logo="/files/a.png", default_currency="AED"),

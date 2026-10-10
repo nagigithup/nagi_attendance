@@ -127,3 +127,7 @@
 "Unsupported leave action: {0}","إجراء الإجازة غير مدعوم: {0}"
 "Not permitted","غير مسموح"
 "Company Attendance Settings","إعدادات حضور الشركة"
+"Reporting","التقارير"
+"Default Reporting Department","القسم الافتراضي للتقارير"
+"Initial department filter for the Manager Attendance dashboard. This does not grant access or change HRMS permissions.","عامل تصفية القسم الأولي للوحة حضور المدير. لا يمنح هذا صلاحيات وصول ولا يغيّر صلاحيات نظام الموارد البشرية."
+"Default Reporting Department must belong to the selected company.","يجب أن ينتمي قسم التقارير الافتراضي إلى الشركة المحددة."

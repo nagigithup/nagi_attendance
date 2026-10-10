@@ -27,7 +27,23 @@ class NagiAttendance {
 		this.restore_state();
 		this.render_shell();
 		this.bind_events();
-		this.load_today();
+		this.initialize();
+	}
+
+	async initialize() {
+		try {
+			const defaults = await this.call("get_dashboard_defaults", {
+				company: frappe.defaults.get_user_default("Company"),
+			});
+			if (defaults?.default_reporting_department) {
+				this.state.department = defaults.default_reporting_department;
+				this.persist_state();
+				this.render_filters();
+			}
+		} catch (_) {
+			// A reporting preference must never prevent the dashboard from loading.
+		}
+		this.load_active();
 	}
 
 	restore_state() {
@@ -212,7 +228,11 @@ class NagiAttendance {
 	async load_leave() {
 		this.loading();
 		try {
-			this.leave = await this.call("get_leave_dashboard", { date: this.state.date });
+			this.leave = await this.call("get_leave_dashboard", {
+				date: this.state.date,
+				employee: this.state.employee,
+				department: this.state.department,
+			});
 			this.render_leave();
 		} catch (error) {
 			this.render_error(error);

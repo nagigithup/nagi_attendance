@@ -54,6 +54,7 @@ def get_company_settings(company: str) -> frappe._dict:
 		default_geofence_radius=0,
 		attendance_start_date=None,
 		prevent_automatic_absence=0,
+		default_reporting_department=None,
 		default_language="ar",
 		brand_primary_color=DEFAULT_BRAND_COLOR,
 		allowed_locations=[],

@@ -9,6 +9,8 @@ from frappe import _
 from frappe.model.workflow import get_transitions, get_workflow_name
 from frappe.utils import add_days, cint, flt, get_datetime, getdate, now_datetime, today
 
+from nagi_attendance.company import get_company_settings
+
 
 EMPLOYEE_FIELDS = [
 	"name",
@@ -52,19 +54,51 @@ def _require_access(*doctypes: str) -> None:
 			frappe.throw(_("You do not have permission to read {0}.").format(doctype), frappe.PermissionError)
 
 
-def _employees(employee: str | None = None, department: str | None = None) -> list[frappe._dict]:
+def _employees(
+	employee: str | None = None,
+	department: str | None = None,
+	attendance_period: tuple[date, date] | None = None,
+) -> list[frappe._dict]:
 	filters: dict = {"status": "Active"}
 	if employee:
 		filters["name"] = employee
 	if department:
 		filters["department"] = department
-	return frappe.get_list(
+	employees = frappe.get_list(
 		"Employee",
 		filters=filters,
 		fields=EMPLOYEE_FIELDS,
 		order_by="employee_name asc",
 		limit_page_length=0,
 	)
+	if not attendance_period or not employees:
+		return employees
+
+	# The existing company policy uses active Shift Assignments as the explicit
+	# attendance requirement. Employees without one (Adan partners, for example)
+	# remain visible in HRMS but are not reported as absent/missing on this dashboard.
+	policy_companies = {
+		row.company
+		for row in employees
+		if row.company and get_company_settings(row.company).get("prevent_automatic_absence")
+	}
+	if not policy_companies:
+		return employees
+
+	required = {row.name for row in employees if row.company not in policy_companies}
+	start, end = attendance_period
+	assignments = frappe.get_all(
+		"Shift Assignment",
+		filters={
+			"employee": ["in", [row.name for row in employees if row.company in policy_companies]],
+			"start_date": ["<=", end],
+			"docstatus": 1,
+		},
+		or_filters=[["end_date", ">=", start], ["end_date", "is", "not set"]],
+		pluck="employee",
+	)
+	required.update(assignments)
+	return [row for row in employees if row.name in required]
 
 
 def _get_rows(doctype: str, filters: dict, fields: list[str], order_by: str | None = None):
@@ -192,7 +226,7 @@ def _resolve_status(
 
 
 def _today_data(value: date, employee: str | None = None, department: str | None = None) -> dict:
-	employees = _employees(employee, department)
+	employees = _employees(employee, department, attendance_period=(value, value))
 	names = [row.name for row in employees]
 	if not names:
 		return {"date": str(value), "summary": _empty_summary(), "employees": [], "timeline": []}
@@ -303,10 +337,29 @@ def get_today_dashboard(date: str | None = None, employee: str | None = None, de
 	value = getdate(date or today())
 	data = _today_data(value, employee, department)
 	data["filters"] = {
-		"employees": _employees(),
+		"employees": _employees(department=department, attendance_period=(value, value)),
 		"departments": frappe.get_list("Department", pluck="name", order_by="name asc", limit_page_length=0),
 	}
 	return data
+
+
+@frappe.whitelist()
+def get_dashboard_defaults(company: str | None = None) -> dict:
+	"""Return a permitted company's reporting preference, never an authorization filter."""
+	_require_access()
+	company = company or frappe.defaults.get_user_default("Company")
+	if not company or not frappe.get_list("Company", filters={"name": company}, pluck="name", limit_page_length=1):
+		return {"company": None, "default_reporting_department": None}
+
+	department = get_company_settings(company).get("default_reporting_department")
+	if department and not frappe.get_list(
+		"Department",
+		filters={"name": department, "company": company},
+		pluck="name",
+		limit_page_length=1,
+	):
+		department = None
+	return {"company": company, "default_reporting_department": department}
 
 
 def _attendance_code(status: str) -> str:
@@ -336,7 +389,7 @@ def get_monthly_attendance(
 		frappe.throw(_("Please select a valid month and year."))
 	start = date(year, month, 1)
 	end = date(year, month, calendar.monthrange(year, month)[1])
-	employees = _employees(employee, department)
+	employees = _employees(employee, department, attendance_period=(start, end))
 	names = [row.name for row in employees]
 	if not names:
 		return {"year": year, "month": month, "days": [], "employees": [], "charts": {}}
@@ -454,26 +507,36 @@ def _average_time(values: list[datetime]) -> str | None:
 
 
 @frappe.whitelist()
-def get_leave_dashboard(date: str | None = None):
+def get_leave_dashboard(
+	date: str | None = None,
+	employee: str | None = None,
+	department: str | None = None,
+):
 	_require_access("Leave Application")
 	value = getdate(date or today())
+	employee_filter = {}
+	if employee or department:
+		names = [row.name for row in _employees(employee, department)]
+		if not names:
+			return {"date": str(value), "on_leave": [], "upcoming": [], "pending": []}
+		employee_filter["employee"] = ["in", names]
 	base_fields = [
 		"name", "employee", "employee_name", "leave_type", "from_date", "to_date",
 		"total_leave_days", "description", "status", "docstatus", "owner",
 	]
 	on_leave = _get_rows(
 		"Leave Application",
-		{"from_date": ["<=", value], "to_date": [">=", value], "status": "Approved", "docstatus": 1},
+		{**employee_filter, "from_date": ["<=", value], "to_date": [">=", value], "status": "Approved", "docstatus": 1},
 		base_fields,
 		"from_date asc",
 	)
 	upcoming = _get_rows(
 		"Leave Application",
-		{"from_date": [">", value], "status": "Approved", "docstatus": 1},
+		{**employee_filter, "from_date": [">", value], "status": "Approved", "docstatus": 1},
 		base_fields,
 		"from_date asc",
 	)[:20]
-	pending_filters = {"status": "Open", "docstatus": ["<", 2]}
+	pending_filters = {**employee_filter, "status": "Open", "docstatus": ["<", 2]}
 	if frappe.session.user != "Administrator":
 		pending_filters["leave_approver"] = frappe.session.user
 	pending = _get_rows("Leave Application", pending_filters, base_fields, "from_date asc")
