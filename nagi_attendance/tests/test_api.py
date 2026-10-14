@@ -6,18 +6,53 @@ from frappe.tests import IntegrationTestCase, UnitTestCase
 
 from nagi_attendance.api import (
 	_attendance_code,
+	_can_manage_permission,
 	_employees,
 	_is_assigned_leave_approver,
 	_live_hours,
+	_permission_request_filters,
 	_resolve_status,
 	_workflow_actions,
 	get_dashboard_defaults,
 	get_leave_dashboard,
+	get_short_permission_context,
 	get_today_dashboard,
 )
 
 
 class TestReportingConfiguration(UnitTestCase):
+	def test_short_permission_tab_is_hidden_without_an_enabled_managed_company(self):
+		scope = frappe._dict(employees=[], companies=["Company A"], enabled_companies=[], is_admin=False)
+		with (
+			patch("nagi_attendance.api._require_access"),
+			patch("nagi_attendance.api._permission_scope", return_value=scope),
+		):
+			context = get_short_permission_context()
+		self.assertFalse(context["visible"])
+		self.assertEqual(context["pending_count"], 0)
+
+	def test_permission_company_filter_cannot_escape_manager_scope(self):
+		scope = frappe._dict(companies=["Company A"], enabled_companies=["Company A"], is_admin=False)
+		with self.assertRaises(frappe.PermissionError):
+			_permission_request_filters(scope, company="Company B")
+
+		filters, summary_filters = _permission_request_filters(scope, company="Company A", status="Pending")
+		self.assertEqual(filters["approver"], frappe.session.user)
+		self.assertEqual(filters["company"], "Company A")
+		self.assertEqual(filters["status"], "Pending")
+		self.assertNotIn("status", summary_filters)
+
+	def test_disabled_company_history_has_no_manager_action(self):
+		doc = frappe._dict(
+			status="Pending", company="Company B", employee="EMP-B", approver=frappe.session.user
+		)
+		scope = frappe._dict(enabled_companies=["Company A"], is_admin=False)
+		self.assertFalse(_can_manage_permission(doc, scope))
+
+		scope.companies = ["Company A", "Company B"]
+		filters, _summary_filters = _permission_request_filters(scope, company="Company B", status="Pending")
+		self.assertEqual(filters["name"], "__no_actionable_permission_request__")
+
 	def test_assignment_exemption_is_company_scoped_and_not_title_based(self):
 		employees = [
 			frappe._dict(

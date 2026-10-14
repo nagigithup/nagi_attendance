@@ -7,9 +7,13 @@ from datetime import date, datetime, time, timedelta
 import frappe
 from frappe import _
 from frappe.model.workflow import get_transitions, get_workflow_name
-from frappe.utils import add_days, cint, flt, get_datetime, getdate, now_datetime, today
+from frappe.utils import add_days, cint, flt, get_datetime, get_time, getdate, now_datetime, today
 
 from nagi_attendance.company import get_company_settings
+from nagi_attendance.short_permission import (
+	_is_admin,
+	_shift_window,
+)
 
 EMPLOYEE_FIELDS = [
 	"name",
@@ -370,6 +374,309 @@ def get_dashboard_defaults(company: str | None = None) -> dict:
 	):
 		department = None
 	return {"company": company, "default_reporting_department": department}
+
+
+SHORT_PERMISSION_STATUSES = {"Pending", "Approved", "Rejected", "Cancelled"}
+SHORT_PERMISSION_TYPES = {"Late Arrival", "Early Departure", "Temporary Exit"}
+
+
+def _permission_scope() -> frappe._dict:
+	"""Resolve manager scope without exposing unrestricted Employee or request rows."""
+	user = frappe.session.user
+	employees = frappe.get_list(
+		"Employee",
+		filters={"status": "Active"},
+		fields=[
+			"name",
+			"employee_name",
+			"company",
+			"department",
+			"user_id",
+			"reports_to",
+			"leave_approver",
+		],
+		order_by="employee_name asc",
+		limit=0,
+	)
+	if not _is_admin(user):
+		manager_employees = {row.name for row in employees if row.user_id == user}
+		employees = [
+			row
+			for row in employees
+			if (
+				(row.leave_approver == user and row.leave_approver != row.user_id)
+				or (
+					(not row.leave_approver or row.leave_approver == row.user_id)
+					and row.reports_to in manager_employees
+				)
+			)
+		]
+
+	# Keep historical request companies in scope even if the employee is now inactive.
+	history_filters = {} if _is_admin(user) else {"approver": user}
+	history_companies = frappe.get_list(
+		"Attendance Permission Request",
+		filters=history_filters,
+		pluck="company",
+		group_by="company",
+		limit=0,
+	)
+	companies = sorted({row.company for row in employees if row.company} | set(history_companies))
+	enabled_companies = [
+		company for company in companies if cint(get_company_settings(company).get("enable_short_permission"))
+	]
+	return frappe._dict(
+		employees=employees,
+		companies=companies,
+		enabled_companies=enabled_companies,
+		is_admin=_is_admin(user),
+	)
+
+
+def _permission_base_filters(scope: frappe._dict) -> dict:
+	filters = {}
+	if not scope.is_admin:
+		filters["approver"] = frappe.session.user
+	return filters
+
+
+def _permission_request_filters(scope: frappe._dict, **values) -> tuple[dict, dict]:
+	filters = _permission_base_filters(scope)
+	summary_filters = dict(filters)
+	company = values.get("company")
+	if company:
+		if company not in scope.companies:
+			frappe.throw(
+				_("You are not authorized to view this company's permission requests."),
+				frappe.PermissionError,
+			)
+		summary_filters["company"] = company
+	for field in ("department", "employee", "permission_type"):
+		if values.get(field):
+			summary_filters[field] = values[field]
+	from_date, to_date = values.get("from_date"), values.get("to_date")
+	if from_date and to_date and getdate(from_date) > getdate(to_date):
+		frappe.throw(_("From Date cannot be after To Date."))
+	if from_date and to_date:
+		summary_filters["permission_date"] = ["between", [from_date, to_date]]
+	elif from_date:
+		summary_filters["permission_date"] = [">=", from_date]
+	elif to_date:
+		summary_filters["permission_date"] = ["<=", to_date]
+	filters = dict(summary_filters)
+	status = values.get("status")
+	if status:
+		if status not in SHORT_PERMISSION_STATUSES:
+			frappe.throw(_("Invalid permission status."))
+		filters["status"] = status
+		if status == "Pending":
+			if company and company not in scope.enabled_companies:
+				# Pending My Approval contains actionable requests only. Historical
+				# pending rows for a disabled company remain available in the All view.
+				filters["name"] = "__no_actionable_permission_request__"
+			elif not company:
+				filters["company"] = ["in", scope.enabled_companies]
+	permission_type = values.get("permission_type")
+	if permission_type and permission_type not in SHORT_PERMISSION_TYPES:
+		frappe.throw(_("Invalid permission type."))
+	return filters, summary_filters
+
+
+def _can_manage_permission(doc, scope: frappe._dict) -> bool:
+	if doc.status != "Pending" or doc.company not in scope.enabled_companies:
+		return False
+	employee_user = frappe.db.get_value("Employee", doc.employee, "user_id")
+	return employee_user != frappe.session.user and (scope.is_admin or doc.approver == frappe.session.user)
+
+
+@frappe.whitelist()
+def get_short_permission_context() -> dict:
+	_require_access("Attendance Permission Request")
+	scope = _permission_scope()
+	visible = bool(scope.enabled_companies)
+	pending_count = 0
+	if visible:
+		filters = _permission_base_filters(scope)
+		filters.update({"status": "Pending", "company": ["in", scope.enabled_companies]})
+		pending_count = len(
+			frappe.get_list("Attendance Permission Request", filters=filters, pluck="name", limit=0)
+		)
+	return {
+		"visible": visible,
+		"pending_count": pending_count,
+		"filters": {
+			"companies": scope.companies,
+			"departments": sorted({row.department for row in scope.employees if row.department}),
+			"employees": [
+				{"name": row.name, "employee_name": row.employee_name, "company": row.company}
+				for row in scope.employees
+			],
+		},
+	}
+
+
+@frappe.whitelist()
+def get_short_permission_dashboard(
+	company: str | None = None,
+	department: str | None = None,
+	employee: str | None = None,
+	from_date: str | None = None,
+	to_date: str | None = None,
+	status: str | None = "Pending",
+	permission_type: str | None = None,
+	page: int | str = 1,
+	page_length: int | str = 20,
+) -> dict:
+	_require_access("Attendance Permission Request")
+	scope = _permission_scope()
+	if not scope.enabled_companies:
+		return {"visible": False, "rows": [], "summary": {}, "total": 0, "page": 1, "page_length": 20}
+	page = max(1, cint(page))
+	page_length = min(100, max(10, cint(page_length)))
+	filters, summary_filters = _permission_request_filters(
+		scope,
+		company=company,
+		department=department,
+		employee=employee,
+		from_date=from_date,
+		to_date=to_date,
+		status=status,
+		permission_type=permission_type,
+	)
+	fields = [
+		"name",
+		"employee",
+		"employee_name",
+		"company",
+		"department",
+		"permission_date",
+		"permission_type",
+		"from_time",
+		"to_time",
+		"duration_hours",
+		"reason",
+		"approver",
+		"status",
+		"manager_comment",
+		"decision_by",
+		"decision_on",
+	]
+	rows = frappe.get_list(
+		"Attendance Permission Request",
+		filters=filters,
+		fields=fields,
+		order_by="permission_date desc, creation desc",
+		start=(page - 1) * page_length,
+		limit=page_length,
+	)
+	for row in rows:
+		row["can_action"] = _can_manage_permission(row, scope)
+		row["feature_enabled"] = row.company in scope.enabled_companies
+
+	grouped = frappe.get_list(
+		"Attendance Permission Request",
+		filters=summary_filters,
+		fields=[
+			"status",
+			{"COUNT": "name", "as": "request_count"},
+			{"SUM": "duration_hours", "as": "duration_hours"},
+		],
+		group_by="status",
+		limit=0,
+	)
+	summary = {"pending": 0, "approved": 0, "rejected": 0, "approved_hours": 0.0}
+	for row in grouped:
+		key = str(row.status).lower()
+		if key in summary:
+			summary[key] = cint(row.request_count)
+		if row.status == "Approved":
+			summary["approved_hours"] = flt(row.duration_hours, 2)
+	pending_filters = {**summary_filters, "status": "Pending"}
+	selected_company = summary_filters.get("company")
+	if selected_company and selected_company not in scope.enabled_companies:
+		pending_filters["name"] = "__no_actionable_permission_request__"
+	elif not selected_company:
+		pending_filters["company"] = ["in", scope.enabled_companies]
+	pending_rows = frappe.get_list(
+		"Attendance Permission Request",
+		filters=pending_filters,
+		fields=[{"COUNT": "name", "as": "request_count"}],
+		limit=1,
+	)
+	summary["pending"] = cint(pending_rows[0].request_count) if pending_rows else 0
+	total_rows = frappe.get_list(
+		"Attendance Permission Request",
+		filters=filters,
+		fields=[{"COUNT": "name", "as": "request_count"}],
+		limit=1,
+	)
+	return {
+		"visible": True,
+		"rows": rows,
+		"summary": summary,
+		"total": cint(total_rows[0].request_count) if total_rows else 0,
+		"page": page,
+		"page_length": page_length,
+	}
+
+
+@frappe.whitelist()
+def get_short_permission_details(name: str) -> dict:
+	_require_access("Attendance Permission Request", "Attendance")
+	scope = _permission_scope()
+	doc = frappe.get_doc("Attendance Permission Request", name)
+	doc.check_permission("read")
+	if not scope.is_admin and doc.approver != frappe.session.user:
+		frappe.throw(_("You are not authorized to view this permission request."), frappe.PermissionError)
+	start = datetime.combine(getdate(doc.permission_date), get_time(doc.from_time))
+	shift = _shift_window(doc.employee, start)
+	attendance = frappe.get_list(
+		"Attendance",
+		filters={"employee": doc.employee, "attendance_date": doc.permission_date, "docstatus": 1},
+		fields=[
+			"name",
+			"status",
+			"shift",
+			"in_time",
+			"out_time",
+			"working_hours",
+			"late_entry",
+			"early_exit",
+		],
+		limit=1,
+	)
+	request_fields = [
+		"name",
+		"employee",
+		"employee_name",
+		"company",
+		"department",
+		"permission_date",
+		"permission_type",
+		"from_time",
+		"to_time",
+		"duration_hours",
+		"reason",
+		"approver",
+		"status",
+		"manager_comment",
+		"decision_by",
+		"decision_on",
+	]
+	return {
+		"request": {
+			**{field: doc.get(field) for field in request_fields},
+			"can_action": _can_manage_permission(doc, scope),
+		},
+		"shift": {
+			"shift_type": getattr(shift.shift_type, "name", shift.shift_type),
+			"start_datetime": shift.start_datetime,
+			"end_datetime": shift.end_datetime,
+		}
+		if shift
+		else None,
+		"attendance": attendance[0] if attendance else None,
+	}
 
 
 def _attendance_code(status: str) -> str:

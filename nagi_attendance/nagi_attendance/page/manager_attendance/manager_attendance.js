@@ -23,6 +23,12 @@ class NagiAttendance {
 			employee: "",
 			department: "",
 			status: "",
+			permission_company: "",
+			permission_from: "",
+			permission_to: "",
+			permission_status: "Pending",
+			permission_type: "",
+			permission_page: 1,
 		};
 		this.restore_state();
 		this.render_shell();
@@ -43,6 +49,7 @@ class NagiAttendance {
 		} catch (_) {
 			// A reporting preference must never prevent the dashboard from loading.
 		}
+		await this.refresh_permission_context();
 		this.load_active();
 	}
 
@@ -66,9 +73,10 @@ class NagiAttendance {
 					<button class="btn btn-default btn-sm" data-action="refresh">${frappe.utils.icon("refresh-cw", "sm")} ${__("Refresh")}</button>
 				</section>
 				<nav class="na-tabs" aria-label="${__("Dashboard views")}">
-					<button class="active" data-tab="today">${__("Today")}</button>
-					<button data-tab="monthly">${__("Monthly Attendance")}</button>
-					<button data-tab="leave">${__("Leave")}</button>
+					<button class="${this.state.tab === "today" ? "active" : ""}" data-tab="today">${__("Today")}</button>
+					<button class="${this.state.tab === "monthly" ? "active" : ""}" data-tab="monthly">${__("Monthly Attendance")}</button>
+					<button class="${this.state.tab === "leave" ? "active" : ""}" data-tab="leave">${__("Leave")}</button>
+					<button class="${this.state.tab === "permissions" ? "active" : ""}" data-tab="permissions" hidden><span>${__("Short Permissions")}</span><span class="na-tab-count" data-permission-count hidden>0</span></button>
 				</nav>
 				<section class="na-filters"></section>
 				<div class="na-view" aria-live="polite"></div>
@@ -78,6 +86,18 @@ class NagiAttendance {
 	}
 
 	render_filters() {
+		if (this.state.tab === "permissions") {
+			const context = this.permission_context?.filters || { companies: [], departments: [], employees: [] };
+			this.$root.find(".na-filters").html(`
+				<label>${__("Company")}<select data-filter="permission_company"><option value="">${__("All companies")}</option>${context.companies.map((name) => `<option value="${this.esc(name)}" ${this.state.permission_company === name ? "selected" : ""}>${this.esc(name)}</option>`).join("")}</select></label>
+				<label>${__("Department")}<select data-filter="department"><option value="">${__("All departments")}</option>${context.departments.map((name) => `<option value="${this.esc(name)}" ${this.state.department === name ? "selected" : ""}>${this.esc(name)}</option>`).join("")}</select></label>
+				<label>${__("Employee")}<select data-filter="employee"><option value="">${__("All employees")}</option>${context.employees.filter((row) => !this.state.permission_company || row.company === this.state.permission_company).map((row) => `<option value="${this.esc(row.name)}" ${this.state.employee === row.name ? "selected" : ""}>${this.esc(row.employee_name)}</option>`).join("")}</select></label>
+				<label>${__("From Date")}<input type="date" data-filter="permission_from" value="${this.esc(this.state.permission_from)}"></label>
+				<label>${__("To Date")}<input type="date" data-filter="permission_to" value="${this.esc(this.state.permission_to)}"></label>
+				<label>${__("Status")}<select data-filter="permission_status"><option value="">${__("All authorized requests")}</option>${["Pending", "Approved", "Rejected", "Cancelled"].map((value) => `<option value="${value}" ${this.state.permission_status === value ? "selected" : ""}>${__(value)}</option>`).join("")}</select></label>
+				<label>${__("Permission Type")}<select data-filter="permission_type"><option value="">${__("All permission types")}</option>${["Late Arrival", "Early Departure", "Temporary Exit"].map((value) => `<option value="${value}" ${this.state.permission_type === value ? "selected" : ""}>${__(value)}</option>`).join("")}</select></label>`);
+			return;
+		}
 		const monthly = this.state.tab === "monthly";
 		const html = monthly
 			? `<label>${__("Month")}<select data-filter="month">${Array.from({ length: 12 }, (_, index) => `<option value="${index + 1}" ${this.state.month === index + 1 ? "selected" : ""}>${this.localized_moment().month(index).format("MMMM")}</option>`).join("")}</select></label>
@@ -99,10 +119,11 @@ class NagiAttendance {
 	}
 
 	bind_events() {
-		this.$root.on("click", "[data-tab]", (event) => {
+		this.$root.on("click", "[data-tab]", async (event) => {
 			this.state.tab = event.currentTarget.dataset.tab;
 			this.$root.find("[data-tab]").removeClass("active");
 			$(event.currentTarget).addClass("active");
+			if (this.state.tab === "permissions") await this.refresh_permission_context();
 			this.render_filters();
 			this.persist_state();
 			this.load_active();
@@ -110,11 +131,18 @@ class NagiAttendance {
 		this.$root.on("change", "[data-filter]", (event) => {
 			const key = event.currentTarget.dataset.filter;
 			this.state[key] = ["month", "year"].includes(key) ? Number(event.currentTarget.value) : event.currentTarget.value;
+			if (this.state.tab === "permissions") this.state.permission_page = 1;
 			this.persist_state();
 			if (key === "status") this.apply_status_filter();
-			else this.load_active();
+			else {
+				if (key === "permission_company") this.render_filters();
+				this.load_active();
+			}
 		});
-		this.$root.on("click", '[data-action="refresh"]', () => this.load_active());
+		this.$root.on("click", '[data-action="refresh"]', async () => {
+			await this.refresh_permission_context();
+			this.load_active();
+		});
 		this.$root.on("click", "[data-summary-status]", (event) => {
 			this.state.status = event.currentTarget.dataset.summaryStatus;
 			this.$root.find('[data-filter="status"]').val(this.state.status);
@@ -122,12 +150,29 @@ class NagiAttendance {
 		});
 		this.$root.on("click", "[data-employee]", (event) => this.open_employee(event.currentTarget.dataset.employee));
 		this.$root.on("click", "[data-leave-action]", (event) => this.apply_leave_action(event.currentTarget));
+		this.$root.on("click", "[data-permission-action]", (event) => {
+			event.stopPropagation();
+			this.open_permission(event.currentTarget.dataset.permissionName, event.currentTarget.dataset.permissionAction);
+		});
+		this.$root.on("click", "[data-permission-view]", (event) => {
+			event.stopPropagation();
+			this.open_permission(event.currentTarget.dataset.permissionView);
+		});
+		this.$root.on("click", "[data-permission-name]", (event) => {
+			if (!$(event.target).closest("button").length) this.open_permission(event.currentTarget.dataset.permissionName);
+		});
+		this.$root.on("click", "[data-permission-page]", (event) => {
+			this.state.permission_page = Number(event.currentTarget.dataset.permissionPage);
+			this.persist_state();
+			this.load_permissions();
+		});
 	}
 
 	load_active() {
 		if (this.state.tab === "today") return this.load_today();
 		if (this.state.tab === "monthly") return this.load_monthly();
-		return this.load_leave();
+		if (this.state.tab === "leave") return this.load_leave();
+		return this.load_permissions();
 	}
 
 	loading() {
@@ -136,6 +181,25 @@ class NagiAttendance {
 
 	async call(method, args = {}) {
 		return (await frappe.call({ method: `nagi_attendance.api.${method}`, args, freeze: false })).message;
+	}
+
+	async refresh_permission_context() {
+		try {
+			this.permission_context = await this.call("get_short_permission_context");
+		} catch (_) {
+			this.permission_context = { visible: false, pending_count: 0, filters: {} };
+		}
+		const tab = this.$root.find('[data-tab="permissions"]');
+		tab.prop("hidden", !this.permission_context.visible);
+		const count = tab.find("[data-permission-count]");
+		count.text(this.permission_context.pending_count || 0).prop("hidden", !this.permission_context.pending_count);
+		if (!this.permission_context.visible && this.state.tab === "permissions") {
+			this.state.tab = "today";
+			this.$root.find("[data-tab]").removeClass("active");
+			this.$root.find('[data-tab="today"]').addClass("active");
+			this.render_filters();
+			this.persist_state();
+		}
 	}
 
 	async load_today() {
@@ -261,6 +325,113 @@ class NagiAttendance {
 		});
 	}
 
+	async load_permissions() {
+		if (!this.permission_context?.visible) return;
+		this.loading();
+		try {
+			this.permissions = await this.call("get_short_permission_dashboard", {
+				company: this.state.permission_company,
+				department: this.state.department,
+				employee: this.state.employee,
+				from_date: this.state.permission_from,
+				to_date: this.state.permission_to,
+				status: this.state.permission_status,
+				permission_type: this.state.permission_type,
+				page: this.state.permission_page,
+				page_length: 20,
+			});
+			this.render_permissions();
+		} catch (error) {
+			this.render_error(error);
+		}
+	}
+
+	render_permissions() {
+		const data = this.permissions;
+		const summary = data.summary || {};
+		const cards = [
+			["pending", __("Pending My Approval"), "clock"],
+			["approved", __("Approved Requests"), "check-circle"],
+			["rejected", __("Rejected Requests"), "x-circle"],
+			["approved_hours", __("Total Approved Permission Hours"), "watch"],
+		].map(([key, label, icon]) => `<article class="na-permission-stat">${frappe.utils.icon(icon, "md")}<span>${label}</span><strong>${summary[key] ?? 0}${key === "approved_hours" ? ` <small>${__("hours")}</small>` : ""}</strong></article>`).join("");
+		const rows = data.rows.length ? data.rows.map((row) => `<tr class="na-permission-row" data-permission-name="${this.esc(row.name)}" tabindex="0">
+			<td><button data-employee="${this.esc(row.employee)}">${this.esc(row.employee_name)}</button></td>
+			<td>${this.esc(row.company)}</td><td>${this.esc(row.department || "—")}</td>
+			<td>${frappe.datetime.str_to_user(row.permission_date)}</td><td>${this.esc(__(row.permission_type))}</td>
+			<td class="na-time">${this.format_time(row.from_time)}</td><td class="na-time">${this.format_time(row.to_time)}</td>
+			<td>${row.duration_hours} ${__("hours")}</td><td class="na-reason" title="${this.esc(row.reason || "")}">${this.esc(row.reason || "—")}</td>
+			<td><span class="na-badge status-${frappe.scrub(row.status)}">${this.esc(__(row.status))}</span>${!row.feature_enabled ? `<small class="na-disabled-feature">${__("Feature disabled")}</small>` : ""}</td>
+			<td><div class="na-permission-actions">${row.can_action ? `<button class="btn btn-primary btn-xs" data-permission-action="Approve" data-permission-name="${this.esc(row.name)}">${__("Approve")}</button><button class="btn btn-default btn-xs" data-permission-action="Reject" data-permission-name="${this.esc(row.name)}">${__("Reject")}</button>` : `<button class="btn btn-default btn-xs" data-permission-view="${this.esc(row.name)}">${__("View Details")}</button>`}</div></td>
+		</tr>`).join("") : `<tr><td colspan="11">${this.empty(__("No Short Permission requests match these filters."))}</td></tr>`;
+		const pages = Math.max(1, Math.ceil(data.total / data.page_length));
+		const pagination = pages > 1 ? `<div class="na-pagination"><button class="btn btn-default btn-sm" data-permission-page="${data.page - 1}" ${data.page <= 1 ? "disabled" : ""}>${__("Previous")}</button><span>${__("Page {0} of {1}", [data.page, pages])}</span><button class="btn btn-default btn-sm" data-permission-page="${data.page + 1}" ${data.page >= pages ? "disabled" : ""}>${__("Next")}</button></div>` : "";
+		this.$root.find(".na-view").html(`<div class="na-permission-stats">${cards}</div>
+			<section class="na-panel"><div class="na-panel-head"><div><span>${__("Short Permissions")}</span><h3>${__("Permission Request History")}</h3></div><small>${__("{0} requests", [data.total])}</small></div>
+			<div class="na-permission-table-wrap"><table class="na-permission-table"><thead><tr>${["Employee", "Company", "Department", "Permission Date", "Permission Type", "From Time", "To Time", "Duration", "Reason", "Status", "Actions"].map((label) => `<th>${__(label)}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></div>${pagination}</section>`);
+	}
+
+	async open_permission(name, suggested_action = "") {
+		const dialog = new frappe.ui.Dialog({
+			title: __("Short Permission Details"),
+			size: "large",
+			fields: [
+				{ fieldtype: "HTML", fieldname: "content" },
+				{ fieldtype: "Small Text", fieldname: "manager_comment", label: __("Manager Comment") },
+			],
+		});
+		dialog.fields_dict.content.$wrapper.html(`<div class="na-loading"><span></span><p>${__("Loading permission request…")}</p></div>`);
+		dialog.show();
+		try {
+			const data = await this.call("get_short_permission_details", { name });
+			const row = data.request;
+			dialog.set_title(`${__("Short Permission")} · ${this.esc(row.name)}`);
+			dialog.set_value("manager_comment", row.manager_comment || "");
+			const attendance = data.attendance;
+			const shift = data.shift;
+			dialog.fields_dict.content.$wrapper.html(`<div class="na-permission-detail" dir="${this.is_arabic ? "rtl" : "ltr"}">
+				<div class="na-drawer-profile"><span class="na-avatar">${this.esc((row.employee_name || "?").slice(0, 1))}</span><div><h3>${this.esc(row.employee_name)}</h3><p>${this.esc([row.company, row.department].filter(Boolean).join(" · "))}</p><span class="na-badge status-${frappe.scrub(row.status)}">${this.esc(__(row.status))}</span></div></div>
+				<div class="na-permission-detail-grid">${[
+					["Employee ID", row.employee], ["Permission Date", frappe.datetime.str_to_user(row.permission_date)], ["Permission Type", __(row.permission_type)], ["From Time", this.format_time(row.from_time)], ["To Time", this.format_time(row.to_time)], ["Duration", `${row.duration_hours} ${__("hours")}`], ["Approver", row.approver], ["Shift", shift?.shift_type || "—"], ["Shift Interval", shift ? `${this.format_datetime(shift.start_datetime)} – ${this.format_datetime(shift.end_datetime)}` : "—"], ["Attendance Status", attendance ? __(attendance.status) : __("No submitted attendance")], ["Check In", attendance ? this.format_datetime(attendance.in_time) : "—"], ["Check Out", attendance ? this.format_datetime(attendance.out_time) : "—"], ["Actual Working Hours", attendance ? attendance.working_hours : "—"], ["Late", attendance ? __(attendance.late_entry ? "Yes" : "No") : "—"], ["Early exit", attendance ? __(attendance.early_exit ? "Yes" : "No") : "—"], ["Manager Comment", row.manager_comment || "—"], ["Decision By", row.decision_by || "—"], ["Decision On", this.format_datetime(row.decision_on)],
+				].map(([label, value]) => `<div><span>${__(label)}</span><strong>${this.esc(value ?? "—")}</strong></div>`).join("")}</div>
+				<section class="na-permission-reason"><span>${__("Reason")}</span><p>${this.esc(row.reason || "—")}</p></section>
+			</div>`);
+			if (!row.can_action) dialog.set_df_property("manager_comment", "hidden", 1);
+			if (row.can_action) {
+				const approve = dialog.set_primary_action(__("Approve"), () => this.apply_permission_action(dialog, name, "Approve"));
+				dialog.set_secondary_action(__("Reject"), () => this.apply_permission_action(dialog, name, "Reject"));
+				if (suggested_action === "Reject") dialog.get_secondary_btn().focus();
+				else if (suggested_action === "Approve" && approve) dialog.get_primary_btn().focus();
+			}
+		} catch (error) {
+			dialog.fields_dict.content.$wrapper.html(this.error_html(error));
+		}
+	}
+
+	async apply_permission_action(dialog, name, action) {
+		if (this.permission_action_busy) return;
+		this.permission_action_busy = true;
+		dialog.get_primary_btn().prop("disabled", true);
+		dialog.get_secondary_btn().prop("disabled", true);
+		try {
+			await frappe.call({
+				method: "nagi_attendance.short_permission.apply_permission_action",
+				args: { name, action, manager_comment: dialog.get_value("manager_comment") },
+				freeze: false,
+			});
+			dialog.hide();
+			frappe.show_alert({ message: action === "Approve" ? __("Permission request approved") : __("Permission request rejected"), indicator: "green" });
+			await this.refresh_permission_context();
+			await this.load_permissions();
+		} catch (error) {
+			frappe.msgprint({ title: __("Unable to update permission request"), message: this.esc(error?.message || error), indicator: "red" });
+		} finally {
+			this.permission_action_busy = false;
+			dialog.get_primary_btn().prop("disabled", false);
+			dialog.get_secondary_btn().prop("disabled", false);
+		}
+	}
+
 	async open_employee(employee) {
 		const dialog = new frappe.ui.Dialog({ title: __("Employee attendance"), size: "large", fields: [{ fieldtype: "HTML", fieldname: "content" }] });
 		dialog.fields_dict.content.$wrapper.html(`<div class="na-loading"><span></span><p>${__("Loading employee…")}</p></div>`);
@@ -313,6 +484,14 @@ class NagiAttendance {
 		if (!value) return value || "—";
 		const match = String(value).match(/^(\d+)h\s+(\d+)m$/);
 		return match ? __("{0} h {1} m", [match[1], match[2]]) : value;
+	}
+
+	format_time(value) {
+		return value ? String(value).slice(0, 5) : "—";
+	}
+
+	format_datetime(value) {
+		return value ? this.localized_moment(value).format("YYYY-MM-DD HH:mm") : "—";
 	}
 
 	calendar_tooltip(cell) {

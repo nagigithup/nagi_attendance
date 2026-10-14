@@ -5,6 +5,11 @@ import frappe
 from frappe.tests import IntegrationTestCase, UnitTestCase
 from frappe.utils import get_datetime
 
+from nagi_attendance.api import (
+	get_short_permission_context,
+	get_short_permission_dashboard,
+	get_short_permission_details,
+)
 from nagi_attendance.company import get_company_settings
 from nagi_attendance.nagi_attendance.report.short_permission_register.short_permission_register import (
 	execute as permission_report,
@@ -158,9 +163,19 @@ class TestShortPermissionWorkflow(IntegrationTestCase):
 			["name", "company", "leave_approver"],
 			as_dict=True,
 		)
+		self.original_feature_setting = frappe.db.get_value(
+			"Nagi Attendance Settings", self.employee.company, "enable_short_permission"
+		)
 		frappe.db.set_value("Nagi Attendance Settings", self.employee.company, "enable_short_permission", 1)
 
 	def tearDown(self):
+		frappe.db.set_value(
+			"Nagi Attendance Settings",
+			self.employee.company,
+			"enable_short_permission",
+			self.original_feature_setting,
+		)
+		frappe.clear_cache(doctype="Nagi Attendance Settings")
 		frappe.set_user(self.original_user)
 
 	def test_employee_submission_manager_approval_and_leave_separation(self):
@@ -208,6 +223,70 @@ class TestShortPermissionWorkflow(IntegrationTestCase):
 		self.assertEqual(row.creditable_authorized_hours, 1)
 		self.assertEqual(row.compliance_hours, 1)
 
+	def test_manager_dashboard_lists_details_and_refreshes_approval_history(self):
+		frappe.set_user(self.employee.leave_approver)
+		baseline_pending = get_short_permission_context()["pending_count"]
+		frappe.set_user("a.mohsen@adanlawfirm.com")
+		request = create_permission_request(
+			"2026-10-15",
+			"Temporary Exit",
+			"10:00",
+			"11:00",
+			"Dashboard approval",
+			self.employee.company,
+		)
+
+		frappe.set_user(self.employee.leave_approver)
+		context = get_short_permission_context()
+		self.assertTrue(context["visible"])
+		self.assertEqual(context["pending_count"], baseline_pending + 1)
+		pending = get_short_permission_dashboard(
+			status="Pending", employee=self.employee.name, from_date="2026-10-15", to_date="2026-10-15"
+		)
+		self.assertEqual(pending["total"], 1)
+		self.assertEqual(pending["summary"]["pending"], 1)
+		self.assertEqual(pending["rows"][0]["name"], request["name"])
+		self.assertTrue(pending["rows"][0]["can_action"])
+
+		details = get_short_permission_details(request["name"])
+		self.assertEqual(details["request"]["employee"], self.employee.name)
+		self.assertTrue(details["request"]["can_action"])
+		self.assertIn("attendance", details)
+
+		apply_permission_action(request["name"], "Approve", "Approved in manager dashboard")
+		self.assertEqual(get_short_permission_context()["pending_count"], baseline_pending)
+		approved = get_short_permission_dashboard(
+			status="Approved", employee=self.employee.name, from_date="2026-10-15", to_date="2026-10-15"
+		)
+		self.assertEqual(approved["total"], 1)
+		self.assertEqual(approved["summary"]["approved"], 1)
+		self.assertEqual(approved["summary"]["approved_hours"], 1)
+		self.assertFalse(approved["rows"][0]["can_action"])
+
+	def test_assigned_hr_user_manager_sees_and_approves_only_assigned_request(self):
+		employee = frappe.db.get_value(
+			"Employee",
+			{"user_id": "osama@adanlawfirm.com"},
+			["name", "company", "leave_approver"],
+			as_dict=True,
+		)
+		self.assertEqual(employee.leave_approver, "abdulrahman@adanlawfirm.com")
+		frappe.set_user(employee.leave_approver)
+		baseline_pending = get_short_permission_context()["pending_count"]
+
+		frappe.set_user("osama@adanlawfirm.com")
+		request = create_permission_request(
+			"2026-10-16", "Temporary Exit", "10:00", "11:00", "Assigned manager test", employee.company
+		)
+		frappe.set_user(employee.leave_approver)
+		self.assertEqual(get_short_permission_context()["pending_count"], baseline_pending + 1)
+		pending = get_short_permission_dashboard(
+			status="Pending", employee=employee.name, from_date="2026-10-16", to_date="2026-10-16"
+		)
+		self.assertEqual([row.name for row in pending["rows"]], [request["name"]])
+		self.assertTrue(pending["rows"][0]["can_action"])
+		self.assertEqual(apply_permission_action(request["name"], "Approve")["status"], "Approved")
+
 	def test_rejection_cancellation_and_unauthorized_access(self):
 		frappe.set_user("a.mohsen@adanlawfirm.com")
 		to_reject = create_permission_request(
@@ -234,6 +313,8 @@ class TestShortPermissionWorkflow(IntegrationTestCase):
 			frappe.get_doc("Attendance Permission Request", to_reject["name"]).check_permission("read")
 		with self.assertRaises(frappe.PermissionError):
 			apply_permission_action(pending["name"], "Approve")
+		with self.assertRaises(frappe.PermissionError):
+			get_short_permission_details(pending["name"])
 
 	def test_hr_and_system_administrators_can_view_history(self):
 		frappe.set_user("a.mohsen@adanlawfirm.com")

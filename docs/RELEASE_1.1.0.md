@@ -39,6 +39,14 @@ If the native Attendance status must be corrected, an authorized HR administrato
 
 The application deliberately provides no API that rewrites submitted Attendance records.
 
+## Manager dashboard integration
+
+When Short Permission is enabled for at least one company in a manager's authorized scope, `/desk/manager-attendance` shows a bilingual **Short Permissions / أذونات الدوام** tab. Its badge counts all pending requests that the signed-in user may approve and is independent of the Today tab date.
+
+The tab provides company, department, employee, date-range, status, and permission-type filters with server-side pagination. Request details include the scheduled shift and submitted Attendance summary when available. Approval and rejection call the existing `nagi_attendance.short_permission.apply_permission_action` endpoint so company activation, assigned approver, self-approval prevention, notifications, and Version audit behavior remain centralized.
+
+Disabled companies expose no actions and continue to retain their historical records. A manager can never expand request visibility by supplying a company or employee in the browser: the API applies DocType permission-query conditions and an explicit manager/administrator scope on every request.
+
 ## Rollback
 
 1. Disable Short Permission for affected companies to stop new requests and exemptions immediately.
