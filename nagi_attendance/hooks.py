@@ -35,7 +35,9 @@ add_to_apps_screen = [
 # ------------------
 
 # include js, css files in header of desk.html
-app_include_css = "/assets/nagi_attendance/css/nagi_attendance.css"
+# Keep the Desk stylesheet URL release-specific. The manager page is rendered
+# dynamically, while this unbundled asset may otherwise remain in browser cache.
+app_include_css = "/assets/nagi_attendance/css/nagi_attendance.css?v=1.1.0.2"
 app_include_js = "/assets/nagi_attendance/js/nagi_attendance.js"
 
 # include js, css files in header of web template
