@@ -2,28 +2,33 @@ from datetime import datetime
 from unittest.mock import patch
 
 import frappe
-from frappe.tests import IntegrationTestCase
-from frappe.tests import UnitTestCase
+from frappe.tests import IntegrationTestCase, UnitTestCase
 
 from nagi_attendance.api import (
 	_attendance_code,
 	_employees,
-	get_today_dashboard,
-	get_dashboard_defaults,
-	get_leave_dashboard,
 	_is_assigned_leave_approver,
 	_live_hours,
 	_resolve_status,
 	_workflow_actions,
+	get_dashboard_defaults,
+	get_leave_dashboard,
+	get_today_dashboard,
 )
 
 
 class TestReportingConfiguration(UnitTestCase):
 	def test_assignment_exemption_is_company_scoped_and_not_title_based(self):
 		employees = [
-			frappe._dict(name="A-REQUIRED", employee_name="Required", company="Company A", designation="Partner"),
-			frappe._dict(name="A-EXEMPT", employee_name="Exempt", company="Company A", designation="Employee"),
-			frappe._dict(name="B-UNCHANGED", employee_name="Existing", company="Company B", designation="Partner"),
+			frappe._dict(
+				name="A-REQUIRED", employee_name="Required", company="Company A", designation="Partner"
+			),
+			frappe._dict(
+				name="A-EXEMPT", employee_name="Exempt", company="Company A", designation="Employee"
+			),
+			frappe._dict(
+				name="B-UNCHANGED", employee_name="Existing", company="Company B", designation="Partner"
+			),
 		]
 		settings = {
 			"Company A": frappe._dict(prevent_automatic_absence=1),

@@ -1,6 +1,5 @@
 import frappe
 
-
 LEGACY_NAME = "Nagi Attendance"
 MODULE = "Nagi Attendance"
 

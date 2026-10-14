@@ -44,12 +44,8 @@ class TestCompanyAttendancePolicy(UnitTestCase):
 			patch("nagi_attendance.overrides.shift_type.get_company_settings") as settings,
 		):
 			settings.return_value.prevent_automatic_absence = 0
-			self.assertEqual(
-				shift.mark_absent_for_dates_with_no_attendance("HR-EMP-OTHER"), "native-no-log"
-			)
-			self.assertEqual(
-				shift.mark_absent_for_half_day_dates("HR-EMP-OTHER"), "native-half-day"
-			)
+			self.assertEqual(shift.mark_absent_for_dates_with_no_attendance("HR-EMP-OTHER"), "native-no-log")
+			self.assertEqual(shift.mark_absent_for_half_day_dates("HR-EMP-OTHER"), "native-half-day")
 
 		self.assertEqual(shift.no_log_absence_calls, ["HR-EMP-OTHER"])
 		self.assertEqual(shift.half_day_absence_calls, ["HR-EMP-OTHER"])

@@ -19,6 +19,7 @@ const messages = {
 		attendanceDisabled:"الحضور عبر الجوال غير مفعّل لهذه الشركة.", leaveDisabled:"طلبات الإجازة عبر الجوال غير مفعّلة لهذه الشركة.",
 		open:"مفتوح", approved:"معتمد", rejected:"مرفوض", cancelled:"ملغي", refreshChanged:"تم تحديث البيانات.",
 		select:"اختر", employee:"الموظف", duration:"المدة", accuracy:"الدقة", meters:"متر", switchCompany:"تغيير الشركة",
+		permission:"طلب إذن", shortPermission:"طلب إذن أثناء الدوام", requestPermission:"طلب إذن", myRequests:"طلباتي", pendingPermissionApprovals:"طلبات بانتظار الموافقة", permissionDate:"تاريخ الإذن", permissionType:"نوع الإذن", lateArrival:"تأخر في الحضور", earlyDeparture:"انصراف مبكر", temporaryExit:"خروج مؤقت", fromTime:"من الساعة", toTime:"إلى الساعة", permissionReason:"سبب الإذن", hours:"ساعات", authorizedDuration:"المدة المصرح بها",
 	},
 	en: {
 		home:"Home", attendance:"Attendance", leave:"Leave", account:"My Account", hello:"Hello",
@@ -38,6 +39,7 @@ const messages = {
 		attendanceDisabled:"Mobile attendance is disabled for this company.", leaveDisabled:"Mobile leave is disabled for this company.",
 		open:"Open", approved:"Approved", rejected:"Rejected", cancelled:"Cancelled", refreshChanged:"Data refreshed.",
 		select:"Select", employee:"Employee", duration:"Duration", accuracy:"Accuracy", meters:"m", switchCompany:"Switch company",
+		permission:"Permission", shortPermission:"Permission During Working Hours", requestPermission:"Request Permission", myRequests:"My Requests", pendingPermissionApprovals:"Pending Approvals", permissionDate:"Permission date", permissionType:"Permission type", lateArrival:"Late Arrival", earlyDeparture:"Early Departure", temporaryExit:"Temporary Exit", fromTime:"From time", toTime:"To time", permissionReason:"Permission Reason", hours:"hours", authorizedDuration:"Authorized Duration",
 	},
 }
 

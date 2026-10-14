@@ -3,7 +3,6 @@ import json
 import frappe
 from frappe.boot import load_translations
 
-
 no_cache = 1
 
 

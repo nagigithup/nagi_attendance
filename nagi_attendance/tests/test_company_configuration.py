@@ -18,14 +18,19 @@ class TestCompanyConfiguration(UnitTestCase):
 			default_reporting_department="Legal - B",
 		)
 		with (
-			patch("nagi_attendance.nagi_attendance.doctype.nagi_attendance_settings.nagi_attendance_settings.frappe.db.get_value", return_value="Company B"),
+			patch(
+				"nagi_attendance.nagi_attendance.doctype.nagi_attendance_settings.nagi_attendance_settings.frappe.db.get_value",
+				return_value="Company B",
+			),
 			self.assertRaises(frappe.ValidationError),
 		):
 			NagiAttendanceSettings.validate(doc)
 
 	def test_two_companies_return_separate_branding(self):
 		companies = {
-			"Company A": frappe._dict(name="Company A", abbr="A", company_logo="/files/a.png", default_currency="AED"),
+			"Company A": frappe._dict(
+				name="Company A", abbr="A", company_logo="/files/a.png", default_currency="AED"
+			),
 			"Company B": frappe._dict(name="Company B", abbr="B", company_logo=None, default_currency="USD"),
 		}
 		settings = {
@@ -33,8 +38,13 @@ class TestCompanyConfiguration(UnitTestCase):
 			"Company B": frappe._dict(brand_primary_color="#445566", default_language="en"),
 		}
 		with (
-			patch("nagi_attendance.company.frappe.db.get_value", side_effect=lambda _dt, name, *_a, **_k: companies[name]),
-			patch("nagi_attendance.company.get_company_settings", side_effect=lambda company: settings[company]),
+			patch(
+				"nagi_attendance.company.frappe.db.get_value",
+				side_effect=lambda _dt, name, *_a, **_k: companies[name],
+			),
+			patch(
+				"nagi_attendance.company.get_company_settings", side_effect=lambda company: settings[company]
+			),
 			patch("nagi_attendance.company.frappe.utils.get_system_timezone", return_value="Asia/Dubai"),
 		):
 			brand_a = company_brand("Company A")

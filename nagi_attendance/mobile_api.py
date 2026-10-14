@@ -14,6 +14,12 @@ from nagi_attendance.company import (
 	get_user_employees,
 	require_authenticated_user,
 )
+from nagi_attendance.short_permission import (
+	apply_permission_action,
+	cancel_permission_request,
+	create_permission_request,
+	get_permission_dashboard,
+)
 
 
 def _day_bounds(value):
@@ -67,7 +73,10 @@ def _settings_payload(settings) -> dict:
 		"enable_mobile_leave": bool(settings.enable_mobile_leave),
 		"allow_attendance_history": bool(settings.allow_attendance_history),
 		"enable_gps_validation": effective_gps,
-		"attendance_start_date": str(settings.attendance_start_date) if settings.attendance_start_date else None,
+		"attendance_start_date": str(settings.attendance_start_date)
+		if settings.attendance_start_date
+		else None,
+		"enable_short_permission": bool(settings.enable_short_permission),
 	}
 
 
@@ -110,7 +119,16 @@ def _today_summary(employee: frappe._dict) -> dict:
 	attendance = frappe.get_list(
 		"Attendance",
 		filters={"employee": employee.name, "attendance_date": state.window.attendance_date, "docstatus": 1},
-		fields=["name", "status", "in_time", "out_time", "working_hours", "late_entry", "early_exit", "shift"],
+		fields=[
+			"name",
+			"status",
+			"in_time",
+			"out_time",
+			"working_hours",
+			"late_entry",
+			"early_exit",
+			"shift",
+		],
 		limit=1,
 	)
 	logs = frappe.get_list(
@@ -154,7 +172,8 @@ def _leave_data(employee: frappe._dict, include_pending_approvals: bool = True) 
 		result["configuration_error"] = str(exc)
 	result["applications"] = get_leave_applications(employee.name, limit=50)
 	result["upcoming"] = [
-		row for row in result["applications"]
+		row
+		for row in result["applications"]
 		if row.status == "Approved" and getdate(row.to_date) >= getdate(today())
 	][:5]
 	result["pending_approvals"] = _pending_approvals(employee) if include_pending_approvals else []
@@ -193,7 +212,7 @@ def bootstrap(company: str | None = None):
 		if row.company not in seen:
 			seen.add(row.company)
 			companies.append(company_brand(row.company))
-	return {
+	result = {
 		"user": user,
 		"employee": employee,
 		"company": company_brand(employee.company),
@@ -203,10 +222,17 @@ def bootstrap(company: str | None = None):
 		"leave": _leave_data(employee) if settings.enable_mobile_leave else None,
 		"languages": ["ar", "en"],
 	}
+	if settings.enable_short_permission:
+		from nagi_attendance.short_permission import get_permission_dashboard
+
+		result["short_permission"] = get_permission_dashboard(employee.company)
+	return result
 
 
 @frappe.whitelist()
-def get_attendance_history(company: str | None = None, from_date: str | None = None, to_date: str | None = None):
+def get_attendance_history(
+	company: str | None = None, from_date: str | None = None, to_date: str | None = None
+):
 	employee = get_current_employee(company)
 	settings = get_company_settings(employee.company)
 	if not settings.enable_mobile_attendance or not settings.allow_attendance_history:
@@ -238,7 +264,18 @@ def get_attendance_history(company: str | None = None, from_date: str | None = N
 		"records": frappe.get_list(
 			"Attendance",
 			filters={"employee": employee.name, "attendance_date": ["between", [start, end]], "docstatus": 1},
-			fields=["name", "attendance_date", "status", "leave_type", "shift", "in_time", "out_time", "working_hours", "late_entry", "early_exit"],
+			fields=[
+				"name",
+				"attendance_date",
+				"status",
+				"leave_type",
+				"shift",
+				"in_time",
+				"out_time",
+				"working_hours",
+				"late_entry",
+				"early_exit",
+			],
 			order_by="attendance_date desc",
 			limit_page_length=0,
 		),
@@ -255,7 +292,9 @@ def create_checkin(log_type: str, latitude=None, longitude=None, accuracy=None, 
 		frappe.throw(_("Mobile employee check-in is disabled in HR Settings."))
 	server_time = now_datetime()
 	if settings.attendance_start_date and getdate(server_time) < getdate(settings.attendance_start_date):
-		frappe.throw(_("Mobile attendance is not available before {0}.").format(settings.attendance_start_date))
+		frappe.throw(
+			_("Mobile attendance is not available before {0}.").format(settings.attendance_start_date)
+		)
 	log_type = _normalize_log_type(log_type)
 	if log_type not in {"IN", "OUT"}:
 		frappe.throw(_("Invalid attendance action."))
@@ -331,7 +370,11 @@ def create_leave_application(
 def _approval_actions(doc) -> list[str]:
 	user = frappe.session.user
 	prevent_self_approval = frappe.db.get_single_value("HR Settings", "prevent_self_leave_approval")
-	if prevent_self_approval and doc.employee and frappe.db.get_value("Employee", doc.employee, "user_id") == user:
+	if (
+		prevent_self_approval
+		and doc.employee
+		and frappe.db.get_value("Employee", doc.employee, "user_id") == user
+	):
 		return []
 	workflow = get_workflow_name("Leave Application")
 	if workflow:

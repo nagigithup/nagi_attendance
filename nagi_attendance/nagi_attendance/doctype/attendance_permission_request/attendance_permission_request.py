@@ -1,0 +1,1 @@
+from nagi_attendance.short_permission import AttendancePermissionRequest

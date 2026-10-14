@@ -70,12 +70,18 @@ class TestMobileCheckinState(UnitTestCase):
 			attendance_date=self.server_time.date(),
 		)
 		with (
-			patch("nagi_attendance.mobile_api.get_current_employee", return_value=self.employee) as employee_lookup,
+			patch(
+				"nagi_attendance.mobile_api.get_current_employee", return_value=self.employee
+			) as employee_lookup,
 			patch("nagi_attendance.mobile_api.get_company_settings", return_value=self.settings),
 			patch("nagi_attendance.mobile_api.now_datetime", return_value=self.server_time),
 			patch("nagi_attendance.mobile_api._attendance_window", return_value=window),
-			patch("nagi_attendance.mobile_api._attendance_state", wraps=_attendance_state) as attendance_state,
-			patch("nagi_attendance.mobile_api.frappe.db.get_single_value", side_effect=self._get_single_value),
+			patch(
+				"nagi_attendance.mobile_api._attendance_state", wraps=_attendance_state
+			) as attendance_state,
+			patch(
+				"nagi_attendance.mobile_api.frappe.db.get_single_value", side_effect=self._get_single_value
+			),
 			patch("nagi_attendance.mobile_api.frappe.db.get_value", side_effect=self._db_get_value),
 			patch("nagi_attendance.mobile_api.frappe.get_doc", side_effect=self._get_doc),
 		):
@@ -85,9 +91,7 @@ class TestMobileCheckinState(UnitTestCase):
 		return result
 
 	def test_valid_first_checkin_ignores_previous_day_history(self):
-		self.historical = frappe._dict(
-			name="YESTERDAY-IN", log_type="IN", time=datetime(2026, 10, 9, 17)
-		)
+		self.historical = frappe._dict(name="YESTERDAY-IN", log_type="IN", time=datetime(2026, 10, 9, 17))
 
 		result = self.create("IN")
 
@@ -340,9 +344,7 @@ class TestMobileSecurity(IntegrationTestCase):
 		frappe.set_user("a.mohsen@adanlawfirm.com")
 		company = frappe.db.get_value("Employee", "HR-EMP-00003", "company")
 		started_at = now_datetime().replace(microsecond=0)
-		checkin = create_checkin(
-			"IN", latitude=24.7870341, longitude=46.8051581, accuracy=8, company=company
-		)
+		checkin = create_checkin("IN", latitude=24.7870341, longitude=46.8051581, accuracy=8, company=company)
 		checkout = create_checkin(
 			"OUT", latitude=24.7870341, longitude=46.8051581, accuracy=8, company=company
 		)

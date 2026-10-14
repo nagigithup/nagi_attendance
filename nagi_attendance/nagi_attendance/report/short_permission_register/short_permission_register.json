@@ -1,0 +1,16 @@
+{
+ "add_total_row": 1,
+ "creation": "2026-10-13 00:00:00.000000",
+ "disable_prepared_report": 0,
+ "doctype": "Report",
+ "is_standard": "Yes",
+ "modified": "2026-10-13 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Nagi Attendance",
+ "name": "Short Permission Register",
+ "owner": "Administrator",
+ "ref_doctype": "Attendance Permission Request",
+ "report_name": "Short Permission Register",
+ "report_type": "Script Report",
+ "roles": [{"role":"HR Manager"},{"role":"HR User"},{"role":"System Manager"}]
+}

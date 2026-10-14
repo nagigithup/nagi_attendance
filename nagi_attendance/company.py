@@ -4,7 +4,6 @@ import frappe
 from frappe import _
 from frappe.utils import cint
 
-
 PRODUCT_NAME = "Nagi Attendance & Leave"
 DEFAULT_BRAND_COLOR = "#176B5B"
 
@@ -22,8 +21,18 @@ def get_user_employees(user: str | None = None) -> list[frappe._dict]:
 		"Employee",
 		filters={"user_id": user, "status": "Active"},
 		fields=[
-			"name", "employee_name", "first_name", "image", "designation", "department",
-			"company", "default_shift", "holiday_list", "reports_to", "leave_approver", "user_id",
+			"name",
+			"employee_name",
+			"first_name",
+			"image",
+			"designation",
+			"department",
+			"company",
+			"default_shift",
+			"holiday_list",
+			"reports_to",
+			"leave_approver",
+			"user_id",
 		],
 		order_by="company asc, modified desc",
 	)
@@ -34,7 +43,9 @@ def get_current_employee(company: str | None = None) -> frappe._dict:
 	if company:
 		employees = [row for row in employees if row.company == company]
 	if not employees:
-		frappe.throw(_("No active employee record is linked to your user for this company."), frappe.PermissionError)
+		frappe.throw(
+			_("No active employee record is linked to your user for this company."), frappe.PermissionError
+		)
 	if len(employees) > 1 and not company:
 		# A deterministic default is safe; all selectable companies are returned by bootstrap.
 		return employees[0]
@@ -55,13 +66,23 @@ def get_company_settings(company: str) -> frappe._dict:
 		attendance_start_date=None,
 		prevent_automatic_absence=0,
 		default_reporting_department=None,
+		enable_short_permission=0,
+		maximum_permission_hours_per_request=0,
+		maximum_permission_hours_per_month=0,
+		allow_late_arrival_permission=1,
+		allow_early_departure_permission=1,
+		allow_temporary_exit_permission=1,
+		require_permission_reason=1,
+		allow_retrospective_permission=0,
+		allow_overlapping_permission=0,
+		permission_counted_as_authorized_working_time=1,
 		default_language="ar",
 		brand_primary_color=DEFAULT_BRAND_COLOR,
 		allowed_locations=[],
 	)
 
 
-def is_feature_enabled(company: str, fieldname: str, default: bool = True) -> bool:
+def is_feature_enabled(company: str, fieldname: str, default: bool = False) -> bool:
 	settings = get_company_settings(company)
 	value = settings.get(fieldname)
 	return default if value is None else bool(cint(value))

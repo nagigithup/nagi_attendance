@@ -8,6 +8,7 @@ Arabic-first, white-label Attendance and Leave PWA for Frappe HR v16. The app us
 - Server-authoritative check-in/out and company/shift-location geofencing
 - Personal attendance status and history
 - Native leave balances, requests, history, cancellation, and manager actions
+- Company-scoped Short Permission requests and approval, disabled by default
 - Company logo, name, currency, timezone, language, and brand color
 - Multi-company selector only for companies linked to the authenticated user
 - Existing manager dashboard at `/desk/manager-attendance`
@@ -37,7 +38,7 @@ Requirements: Frappe/ERPNext v16 and Frappe HR v16. Production PWA installation 
 9. Assign standard HRMS roles and User Permissions. Ordinary employees must not receive HR Manager access.
 10. Open `/attendance`; use the browser's Add to Home Screen / Install command.
 
-Without a Nagi settings record, safe product defaults enable the two mobile modules but do not enable GPS or no-log absence suppression. Shift and leave setup is never synthesized.
+Without a Nagi settings record, safe product defaults enable the existing two mobile modules but do not enable GPS, no-log absence suppression, or Short Permission. Shift, leave, and permission policy setup is never synthesized.
 
 ## Company policy and security
 
@@ -66,4 +67,4 @@ Run tests with:
 bench --site your-site run-tests --app nagi_attendance
 ```
 
-The old Adan setup helper remains an idempotent pilot-site provisioning utility. It is not executed for other customers and no runtime path contains an Adan company check.
+No customer provisioning data or customer-specific defaults are shipped by the application. Existing site data is managed independently and is never rewritten by installation or migration hooks.

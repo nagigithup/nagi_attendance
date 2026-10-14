@@ -1,0 +1,52 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "format:SPR-{YYYY}-{#####}",
+ "creation": "2026-10-13 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "employee", "employee_name", "company", "department", "permission_date", "permission_type",
+  "from_time", "to_time", "duration_hours", "reason", "approval_section", "approver", "status",
+  "manager_comment", "decision_by", "decision_on", "cancelled_by", "cancelled_on"
+ ],
+ "fields": [
+  {"fieldname":"employee","fieldtype":"Link","in_list_view":1,"label":"Employee","options":"Employee","reqd":1},
+  {"fetch_from":"employee.employee_name","fieldname":"employee_name","fieldtype":"Data","label":"Employee Name","read_only":1},
+  {"fetch_from":"employee.company","fieldname":"company","fieldtype":"Link","in_list_view":1,"label":"Company","options":"Company","read_only":1,"reqd":1},
+  {"fetch_from":"employee.department","fieldname":"department","fieldtype":"Link","label":"Department","options":"Department","read_only":1},
+  {"fieldname":"permission_date","fieldtype":"Date","in_list_view":1,"label":"Permission Date","reqd":1},
+  {"fieldname":"permission_type","fieldtype":"Select","in_list_view":1,"label":"Permission Type","options":"Late Arrival\nEarly Departure\nTemporary Exit","reqd":1},
+  {"fieldname":"from_time","fieldtype":"Time","label":"From Time","reqd":1},
+  {"fieldname":"to_time","fieldtype":"Time","label":"To Time","reqd":1},
+  {"fieldname":"duration_hours","fieldtype":"Float","in_list_view":1,"label":"Authorized Duration (hours)","precision":"2","read_only":1},
+  {"fieldname":"reason","fieldtype":"Small Text","label":"Permission Reason"},
+  {"fieldname":"approval_section","fieldtype":"Section Break","label":"Approval"},
+  {"fieldname":"approver","fieldtype":"Link","label":"Approver","options":"User","read_only":1},
+  {"default":"Pending","fieldname":"status","fieldtype":"Select","in_list_view":1,"label":"Status","options":"Pending\nApproved\nRejected\nCancelled","read_only":1},
+  {"fieldname":"manager_comment","fieldtype":"Small Text","label":"Manager Comment","read_only":1},
+  {"fieldname":"decision_by","fieldtype":"Link","label":"Decision By","options":"User","read_only":1},
+  {"fieldname":"decision_on","fieldtype":"Datetime","label":"Decision On","read_only":1},
+  {"fieldname":"cancelled_by","fieldtype":"Link","label":"Cancelled By","options":"User","read_only":1},
+  {"fieldname":"cancelled_on","fieldtype":"Datetime","label":"Cancelled On","read_only":1}
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-13 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Nagi Attendance",
+ "name": "Attendance Permission Request",
+ "owner": "Administrator",
+ "permissions": [
+  {"create":1,"read":1,"role":"Employee"},
+  {"create":1,"read":1,"role":"Employee Self Service"},
+  {"create":1,"email":1,"export":1,"print":1,"read":1,"report":1,"role":"HR User","write":1},
+  {"create":1,"delete":1,"email":1,"export":1,"print":1,"read":1,"report":1,"role":"HR Manager","share":1,"write":1},
+  {"create":1,"delete":1,"email":1,"export":1,"print":1,"read":1,"report":1,"role":"System Manager","share":1,"write":1}
+ ],
+ "search_fields": "employee,employee_name,company,department,approver,status",
+ "sort_field": "permission_date",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

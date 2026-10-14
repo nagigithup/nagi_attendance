@@ -36,7 +36,10 @@ class TestMandatoryCheckinLocation(UnitTestCase):
 			patch("nagi_attendance.attendance_validation.frappe.db.get_single_value", return_value=1),
 			patch("nagi_attendance.attendance_validation.frappe.get_all", return_value=[self.assignment]),
 			patch("nagi_attendance.attendance_validation.frappe.db.get_value", side_effect=get_value),
-			patch("nagi_attendance.attendance_validation.get_company_settings", return_value=frappe._dict(allowed_locations=[])),
+			patch(
+				"nagi_attendance.attendance_validation.get_company_settings",
+				return_value=frappe._dict(allowed_locations=[]),
+			),
 		):
 			validate_mandatory_employee_checkin_location(self.doc)
 
@@ -63,6 +66,7 @@ class TestMandatoryCheckinLocation(UnitTestCase):
 	def test_company_fallback_radius_is_used_when_location_radius_is_empty(self):
 		self.doc.latitude = 24.7890
 		location = frappe._dict(checkin_radius=0, latitude=24.7870341, longitude=46.8051581)
+
 		def get_value(doctype, name, fields, **kwargs):
 			return "Company B" if doctype == "Employee" else location
 

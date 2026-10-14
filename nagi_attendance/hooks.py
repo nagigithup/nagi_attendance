@@ -154,11 +154,14 @@ doc_events = {
 	}
 }
 
+permission_query_conditions = {
+	"Attendance Permission Request": "nagi_attendance.short_permission.get_permission_query_conditions"
+}
+has_permission = {"Attendance Permission Request": "nagi_attendance.short_permission.has_permission"}
+
 # Keep native HRMS auto-attendance for real check-in logs. Company policy may
 # suppress only no-log Absent generation without changing historical records.
-extend_doctype_class = {
-	"Shift Type": ["nagi_attendance.overrides.shift_type.CompanyAttendancePolicyMixin"]
-}
+extend_doctype_class = {"Shift Type": ["nagi_attendance.overrides.shift_type.CompanyAttendancePolicyMixin"]}
 
 # Scheduled Tasks
 # ---------------

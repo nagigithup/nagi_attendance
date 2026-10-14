@@ -11,7 +11,6 @@ from frappe.utils import add_days, cint, flt, get_datetime, getdate, now_datetim
 
 from nagi_attendance.company import get_company_settings
 
-
 EMPLOYEE_FIELDS = [
 	"name",
 	"employee_name",
@@ -39,7 +38,9 @@ ATTENDANCE_FIELDS = [
 
 def has_app_permission() -> bool:
 	"""Use the existing Desk Page roles to decide whether its app icon is visible."""
-	return frappe.session.user != "Guest" and bool(frappe.get_doc("Page", "manager-attendance").is_permitted())
+	return frappe.session.user != "Guest" and bool(
+		frappe.get_doc("Page", "manager-attendance").is_permitted()
+	)
 
 
 def _require_access(*doctypes: str) -> None:
@@ -155,9 +156,9 @@ def _holiday_map(employees: list[frappe._dict], start: date, end: date) -> dict[
 
 	assigned_to = [row.name for row in employees] + [row.company for row in employees if row.company]
 	assignments = get_holiday_list_assignments(assigned_to)
-	list_names = {
-		assignment.holiday_list for rows in assignments.values() for assignment in rows
-	} | {row.holiday_list for row in employees if row.holiday_list}
+	list_names = {assignment.holiday_list for rows in assignments.values() for assignment in rows} | {
+		row.holiday_list for row in employees if row.holiday_list
+	}
 	if not list_names:
 		return {}
 	holiday_rows = frappe.db.get_all(
@@ -167,7 +168,9 @@ def _holiday_map(employees: list[frappe._dict], start: date, end: date) -> dict[
 	)
 	by_list = defaultdict(dict)
 	for row in holiday_rows:
-		by_list[row.parent][str(row.holiday_date)] = "Weekly Off" if row.weekly_off else (row.description or "Holiday")
+		by_list[row.parent][str(row.holiday_date)] = (
+			"Weekly Off" if row.weekly_off else (row.description or "Holiday")
+		)
 	result = defaultdict(dict)
 	for employee in employees:
 		cursor = start
@@ -272,8 +275,10 @@ def _today_data(value: date, employee: str | None = None, department: str | None
 		in_time = attendance.in_time if attendance else (logs[0].time if logs else None)
 		out_logs = [log for log in logs if log.log_type == "OUT"]
 		out_time = attendance.out_time if attendance else (out_logs[-1].time if out_logs else None)
-		working_hours = flt(attendance.working_hours) if attendance else _live_hours(
-			logs, now_datetime() if value == getdate(today()) else None
+		working_hours = (
+			flt(attendance.working_hours)
+			if attendance
+			else _live_hours(logs, now_datetime() if value == getdate(today()) else None)
 		)
 		result.append(
 			{
@@ -319,7 +324,10 @@ def _today_data(value: date, employee: str | None = None, department: str | None
 			"log_type": row.log_type or "IN",
 			"late": bool(
 				row == logs_by_employee[row.employee][0]
-				and _late_from_checkin(row, row.shift or next((e.default_shift for e in employees if e.name == row.employee), None))
+				and _late_from_checkin(
+					row,
+					row.shift or next((e.default_shift for e in employees if e.name == row.employee), None),
+				)
 			),
 		}
 		for row in checkins
@@ -348,7 +356,9 @@ def get_dashboard_defaults(company: str | None = None) -> dict:
 	"""Return a permitted company's reporting preference, never an authorization filter."""
 	_require_access()
 	company = company or frappe.defaults.get_user_default("Company")
-	if not company or not frappe.get_list("Company", filters={"name": company}, pluck="name", limit_page_length=1):
+	if not company or not frappe.get_list(
+		"Company", filters={"name": company}, pluck="name", limit_page_length=1
+	):
 		return {"company": None, "default_reporting_department": None}
 
 	department = get_company_settings(company).get("default_reporting_department")
@@ -428,7 +438,14 @@ def get_monthly_attendance(
 		logs_map[(row.employee, str(getdate(row.time)))].append(row)
 	holidays = _holiday_map(employees, start, end)
 
-	days = [{"day": day, "date": str(date(year, month, day)), "weekday": calendar.day_abbr[date(year, month, day).weekday()]} for day in range(1, end.day + 1)]
+	days = [
+		{
+			"day": day,
+			"date": str(date(year, month, day)),
+			"weekday": calendar.day_abbr[date(year, month, day).weekday()],
+		}
+		for day in range(1, end.day + 1)
+	]
 	rows = []
 	trend = [0] * end.day
 	late_by_employee = []
@@ -444,7 +461,9 @@ def get_monthly_attendance(
 			leave = leave_map.get((employee_row.name, day["date"]))
 			logs = logs_map[(employee_row.name, day["date"])]
 			holiday = holidays.get(employee_row.name, {}).get(day["date"])
-			shift = attendance.shift if attendance else (logs[0].shift if logs else employee_row.default_shift)
+			shift = (
+				attendance.shift if attendance else (logs[0].shift if logs else employee_row.default_shift)
+			)
 			if value > getdate(today()) and not attendance and not leave:
 				status, detail, late = "Future", None, False
 			else:
@@ -453,12 +472,20 @@ def get_monthly_attendance(
 			first = attendance.in_time if attendance else (logs[0].time if logs else None)
 			out_logs = [log for log in logs if log.log_type == "OUT"]
 			last = attendance.out_time if attendance else (out_logs[-1].time if out_logs else None)
-			cells.append({
-				"date": day["date"], "status": status, "code": _attendance_code(status),
-				"detail": detail, "in_time": _format_time(first), "out_time": _format_time(last),
-				"working_hours": working_hours, "working_hours_label": _format_duration(working_hours),
-				"late": late, "early_exit": bool(attendance.early_exit) if attendance else False,
-			})
+			cells.append(
+				{
+					"date": day["date"],
+					"status": status,
+					"code": _attendance_code(status),
+					"detail": detail,
+					"in_time": _format_time(first),
+					"out_time": _format_time(last),
+					"working_hours": working_hours,
+					"working_hours_label": _format_duration(working_hours),
+					"late": late,
+					"early_exit": bool(attendance.early_exit) if attendance else False,
+				}
+			)
 			if status != "Future":
 				counts[status] += 1
 				breakdown[status] += 1
@@ -492,7 +519,11 @@ def get_monthly_attendance(
 		"days": days,
 		"employees": rows,
 		"charts": {
-			"breakdown": {"present": sum(breakdown[s] for s in ("Present", "Late", "Half Day", "Work From Home")), "leave": breakdown["On Leave"], "absent": breakdown["Absent"]},
+			"breakdown": {
+				"present": sum(breakdown[s] for s in ("Present", "Late", "Half Day", "Work From Home")),
+				"leave": breakdown["On Leave"],
+				"absent": breakdown["Absent"],
+			},
 			"trend": trend,
 			"late": late_by_employee,
 		},
@@ -521,12 +552,27 @@ def get_leave_dashboard(
 			return {"date": str(value), "on_leave": [], "upcoming": [], "pending": []}
 		employee_filter["employee"] = ["in", names]
 	base_fields = [
-		"name", "employee", "employee_name", "leave_type", "from_date", "to_date",
-		"total_leave_days", "description", "status", "docstatus", "owner",
+		"name",
+		"employee",
+		"employee_name",
+		"leave_type",
+		"from_date",
+		"to_date",
+		"total_leave_days",
+		"description",
+		"status",
+		"docstatus",
+		"owner",
 	]
 	on_leave = _get_rows(
 		"Leave Application",
-		{**employee_filter, "from_date": ["<=", value], "to_date": [">=", value], "status": "Approved", "docstatus": 1},
+		{
+			**employee_filter,
+			"from_date": ["<=", value],
+			"to_date": [">=", value],
+			"status": "Approved",
+			"docstatus": 1,
+		},
 		base_fields,
 		"from_date asc",
 	)
@@ -597,7 +643,9 @@ def apply_leave_action(name: str, action: str):
 
 
 @frappe.whitelist()
-def get_employee_details(employee: str, date: str | None = None, year: int | None = None, month: int | None = None):
+def get_employee_details(
+	employee: str, date: str | None = None, year: int | None = None, month: int | None = None
+):
 	_require_access("Attendance", "Employee Checkin", "Leave Application")
 	value = getdate(date or today())
 	if not frappe.has_permission("Employee", "read", employee):
