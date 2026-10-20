@@ -139,7 +139,12 @@ const locale = computed(()=>lang.value === "ar" ? "ar-SA" : "en-GB")
 const fullDate = computed(()=>new Intl.DateTimeFormat(locale.value,{weekday:"long",day:"numeric",month:"long",year:"numeric"}).format(new Date()))
 
 async function api(method, args={}, post=false) {
-	const options = {method:post?"POST":"GET",headers:{"Accept":"application/json","X-Frappe-CSRF-Token":window.csrf_token}}
+	const options = {
+		method:post?"POST":"GET",
+		cache:"no-store",
+		credentials:"same-origin",
+		headers:{"Accept":"application/json","X-Frappe-CSRF-Token":window.csrf_token},
+	}
 	if (post) { options.headers["Content-Type"]="application/json"; options.body=JSON.stringify(args) }
 	const query = !post && Object.keys(args).length ? "?"+new URLSearchParams(args) : ""
 	const response = await fetch(`/api/method/nagi_attendance.mobile_api.${method}${query}`,options)
@@ -199,6 +204,7 @@ async function logout() {
 	try {
 		const response = await fetch("/api/method/logout", {
 			method: "POST",
+			cache: "no-store",
 			credentials: "same-origin",
 			headers: {"Accept":"application/json", "X-Frappe-CSRF-Token":window.csrf_token},
 		})

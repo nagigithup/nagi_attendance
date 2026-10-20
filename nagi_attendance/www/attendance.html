@@ -7,13 +7,13 @@
 		<meta name="apple-mobile-web-app-capable" content="yes" />
 		<meta name="apple-mobile-web-app-status-bar-style" content="default" />
 		<meta name="apple-mobile-web-app-title" content="Nagi Attendance" />
-		<link rel="manifest" href="/assets/nagi_attendance/attendance/manifest.webmanifest" />
+		<link rel="manifest" href="/assets/nagi_attendance/attendance/manifest.webmanifest?v={{ frontend_assets.version }}" />
 		<link rel="icon" href="/assets/nagi_attendance/images/attendance-app.svg" />
 		<link rel="apple-touch-icon" href="/assets/nagi_attendance/images/attendance-app-192.png" />
 		<title>Nagi Attendance &amp; Leave</title>
 		<script>window.csrf_token={{ csrf_token | tojson }};window.nagi_boot={{ boot_json | safe }};</script>
-		<script type="module" crossorigin src="/assets/nagi_attendance/attendance/app.js"></script>
-		<link rel="stylesheet" crossorigin href="/assets/nagi_attendance/attendance/app.css" />
+		<script type="module" crossorigin src="{{ frontend_assets.javascript }}"></script>
+		{% for stylesheet in frontend_assets.stylesheets %}<link rel="stylesheet" crossorigin href="{{ stylesheet }}" />{% endfor %}
 	</head>
 	<body><div id="app"></div></body>
 </html>

@@ -48,7 +48,7 @@ The browser never chooses an arbitrary employee. Every employee/company context 
 
 ## PWA behavior
 
-The service worker caches only versioned application shell assets. API responses, employee images/files, and attendance or leave data are network-only and are not persisted by the app. Check-ins are never queued offline.
+Production builds emit content-hashed JavaScript and CSS plus `asset-manifest.json`. The attendance page is always served with no-cache headers and resolves the current hashes from that manifest. The service worker caches only the matching versioned application shell, removes only older Nagi Attendance caches after activation, and offers a bilingual update prompt before activating a waiting worker. API responses, employee images/files, page navigations, and attendance, leave, or permission data are network-only with `no-store`; check-ins are never queued offline.
 
 Browsers generally cache manifest metadata outside the signed-in employee context. To avoid leaking or pinning one company's identity on multi-company sites, the install manifest uses the neutral **Nagi Attendance & Leave** name and icon. In-app identity is always company-specific.
 
@@ -59,7 +59,13 @@ The Vue 3 source is under `frontend/`. HRMS is a required app, so the local buil
 ```bash
 cd apps/nagi_attendance/frontend
 ../../hrms/frontend/node_modules/.bin/vite build
+cd ../../..
+bench build --app nagi_attendance
+bench --site your-site clear-cache
+bench --site your-site clear-website-cache
 ```
+
+Run the Vite command before `bench build`; it generates the hashed assets, manifest, and deployment-specific service worker used by `/attendance`.
 
 Run tests with:
 

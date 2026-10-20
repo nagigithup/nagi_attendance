@@ -1,5 +1,10 @@
 import { chromium } from "../../../pos_next/node_modules/playwright/index.mjs"
 import assert from "node:assert/strict"
+import fs from "node:fs"
+
+const assetManifest = JSON.parse(fs.readFileSync(new URL("../../nagi_attendance/public/attendance/asset-manifest.json", import.meta.url), "utf8"))
+const assetEntry = Object.values(assetManifest).find(value => value.isEntry)
+const stylesheetLinks = (assetEntry.css || []).map(file => `<link rel="stylesheet" href="/assets/nagi_attendance/attendance/${file}">`).join("")
 
 const base = "http://127.0.0.1:8001"
 const bootstrap = {
@@ -35,7 +40,7 @@ try {
 		dialogs.push(dialog.type())
 		await dialog.dismiss()
 	})
-	await page.route(`${base}/attendance`, route => route.fulfill({contentType:"text/html",body:`<!doctype html><html lang="ar" dir="rtl"><head><meta name="theme-color" content="#176B5B"><link rel="stylesheet" href="/assets/nagi_attendance/attendance/app.css"><script>window.csrf_token="test"</script><script type="module" src="/assets/nagi_attendance/attendance/app.js"></script></head><body><div id="app"></div></body></html>`}))
+	await page.route(`${base}/attendance`, route => route.fulfill({contentType:"text/html",body:`<!doctype html><html lang="ar" dir="rtl"><head><meta name="theme-color" content="#176B5B">${stylesheetLinks}<script>window.csrf_token="test"</script><script type="module" src="/assets/nagi_attendance/attendance/${assetEntry.file}"></script></head><body><div id="app"></div></body></html>`}))
 	await page.route("**/api/method/nagi_attendance.mobile_api.bootstrap**", route => route.fulfill({contentType:"application/json",body:JSON.stringify({message:{...bootstrap,today:{...bootstrap.today,logs:lastLog?[lastLog]:[],last_log:lastLog,next_action:nextAction,status:nextAction === "IN" ? "Not Checked In" : "Checked In"}}})}))
 	await page.route("**/api/method/nagi_attendance.mobile_api.create_checkin", async route => {
 		const action = route.request().postDataJSON().log_type
@@ -57,7 +62,7 @@ try {
 	assert.match(await page.locator(".brand strong").innerText(), /شركة الاختبار/)
 	assert.equal(await page.locator(".bottom-nav button").count(), 4)
 	await page.waitForFunction(async () => Boolean(await navigator.serviceWorker.getRegistration("/attendance")))
-	await page.waitForFunction(async () => (await caches.keys()).includes("nagi-attendance-shell-v4"))
+	await page.waitForFunction(async () => (await caches.keys()).some(key => key.startsWith("nagi-attendance-shell-") && key !== "nagi-attendance-shell-v4"))
 	const attendanceButton = page.locator(".check-button")
 	assert.equal(await attendanceButton.innerText(), "تسجيل الحضور")
 	await attendanceButton.click()

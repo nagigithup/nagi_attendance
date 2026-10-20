@@ -3,5 +3,8 @@
   "private": true,
   "version": "1.1.0",
   "type": "module",
-  "scripts": {"build": "vite build"}
+  "scripts": {
+    "build": "vite build",
+    "test:cache": "node tests/cache-contract.mjs"
+  }
 }
