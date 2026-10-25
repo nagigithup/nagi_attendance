@@ -284,6 +284,41 @@ class TestMobileCheckinState(UnitTestCase):
 		self.assertTrue(self.state_calls[0].kwargs["for_update"])
 
 
+class TestMobileFeatureFlags(UnitTestCase):
+	def test_bootstrap_exposes_short_permission_only_when_enabled(self):
+		employee = frappe._dict(name="EMP-FEATURE-TEST", company="Company A")
+		for enabled in (0, 1):
+			with self.subTest(enabled=enabled):
+				settings = frappe._dict(
+					enable_mobile_attendance=0,
+					enable_mobile_leave=0,
+					allow_attendance_history=1,
+					enable_gps_validation=0,
+					attendance_start_date=None,
+					enable_short_permission=enabled,
+				)
+				with (
+					patch("nagi_attendance.mobile_api.require_authenticated_user", return_value="employee@example.com"),
+					patch("nagi_attendance.mobile_api.get_current_employee", return_value=employee),
+					patch("nagi_attendance.mobile_api.get_company_settings", return_value=settings),
+					patch("nagi_attendance.mobile_api.get_user_employees", return_value=[employee]),
+					patch(
+						"nagi_attendance.mobile_api.company_brand",
+						return_value=frappe._dict(name=employee.company),
+					),
+					patch("nagi_attendance.mobile_api.frappe.db.get_single_value", return_value=0),
+					patch(
+						"nagi_attendance.short_permission.get_permission_dashboard",
+						return_value={"requests": [], "pending_approvals": []},
+					) as permission_dashboard,
+				):
+					result = bootstrap()
+
+				self.assertEqual(result["settings"]["enable_short_permission"], bool(enabled))
+				self.assertEqual("short_permission" in result, bool(enabled))
+				self.assertEqual(permission_dashboard.call_count, enabled)
+
+
 class TestMobileSecurity(IntegrationTestCase):
 	def setUp(self):
 		self.original_user = frappe.session.user
