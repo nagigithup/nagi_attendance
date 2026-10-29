@@ -301,7 +301,9 @@ def get_permission_dashboard(company=None):
 @frappe.whitelist(methods=["POST"])
 def apply_permission_action(name, action, manager_comment=None):
 	user = require_authenticated_user()
-	doc = frappe.get_doc("Attendance Permission Request", name)
+	# Serialize decisions for one request. A second concurrent click/request waits,
+	# reloads the committed status, and is rejected by the Pending check below.
+	doc = frappe.get_doc("Attendance Permission Request", name, for_update=True)
 	_ensure_enabled(doc.company)
 	if doc.status != "Pending" or action not in {"Approve", "Reject"}:
 		frappe.throw(_("This approval action is not available."))
@@ -313,7 +315,7 @@ def apply_permission_action(name, action, manager_comment=None):
 	doc.validate()
 	doc.flags.permission_action = True
 	doc.status = "Approved" if action == "Approve" else "Rejected"
-	doc.manager_comment = manager_comment
+	doc.manager_comment = (manager_comment or "").strip() or None
 	doc.decision_by = user
 	doc.decision_on = now_datetime()
 	doc.save(ignore_permissions=True, ignore_version=False)

@@ -153,7 +153,7 @@ class NagiAttendance {
 		this.$root.on("click", "[data-leave-action]", (event) => this.apply_leave_action(event.currentTarget));
 		this.$root.on("click", "[data-permission-action]", (event) => {
 			event.stopPropagation();
-			this.open_permission(event.currentTarget.dataset.permissionName, event.currentTarget.dataset.permissionAction);
+			this.apply_permission_action(event.currentTarget);
 		});
 		this.$root.on("click", "[data-permission-view]", (event) => {
 			event.stopPropagation();
@@ -393,14 +393,11 @@ class NagiAttendance {
 		this.load_permissions();
 	}
 
-	async open_permission(name, suggested_action = "") {
+	async open_permission(name) {
 		const dialog = new frappe.ui.Dialog({
 			title: __("Short Permission Details"),
 			size: "large",
-			fields: [
-				{ fieldtype: "HTML", fieldname: "content" },
-				{ fieldtype: "Small Text", fieldname: "manager_comment", label: __("Manager Comment") },
-			],
+			fields: [{ fieldtype: "HTML", fieldname: "content" }],
 		});
 		dialog.fields_dict.content.$wrapper.html(`<div class="na-loading"><span></span><p>${__("Loading permission request…")}</p></div>`);
 		dialog.show();
@@ -408,7 +405,6 @@ class NagiAttendance {
 			const data = await this.call("get_short_permission_details", { name });
 			const row = data.request;
 			dialog.set_title(`${__("Short Permission")} · ${this.esc(row.name)}`);
-			dialog.set_value("manager_comment", row.manager_comment || "");
 			const attendance = data.attendance;
 			const shift = data.shift;
 			dialog.fields_dict.content.$wrapper.html(`<div class="na-permission-detail" dir="${this.is_arabic ? "rtl" : "ltr"}">
@@ -418,39 +414,39 @@ class NagiAttendance {
 				].map(([label, value]) => `<div><span>${__(label)}</span><strong>${this.esc(value ?? "—")}</strong></div>`).join("")}</div>
 				<section class="na-permission-reason"><span>${__("Reason")}</span><p>${this.esc(row.reason || "—")}</p></section>
 			</div>`);
-			if (!row.can_action) dialog.set_df_property("manager_comment", "hidden", 1);
-			if (row.can_action) {
-				const approve = dialog.set_primary_action(__("Approve"), () => this.apply_permission_action(dialog, name, "Approve"));
-				dialog.set_secondary_action(__("Reject"), () => this.apply_permission_action(dialog, name, "Reject"));
-				if (suggested_action === "Reject") dialog.get_secondary_btn().focus();
-				else if (suggested_action === "Approve" && approve) dialog.get_primary_btn().focus();
-			}
 		} catch (error) {
 			dialog.fields_dict.content.$wrapper.html(this.error_html(error));
 		}
 	}
 
-	async apply_permission_action(dialog, name, action) {
-		if (this.permission_action_busy) return;
-		this.permission_action_busy = true;
-		dialog.get_primary_btn().prop("disabled", true);
-		dialog.get_secondary_btn().prop("disabled", true);
+	async apply_permission_action(button) {
+		const name = button.dataset.permissionName;
+		const action = button.dataset.permissionAction;
+		this.permission_actions_busy ||= new Set();
+		if (this.permission_actions_busy.has(name)) return;
+		this.permission_actions_busy.add(name);
+		const $actions = $(button).closest(".na-permission-actions");
+		const $buttons = $actions.find("button");
+		const original_label = button.innerHTML;
+		$buttons.prop("disabled", true);
+		button.innerHTML = `${frappe.utils.icon("loader", "xs")} ${__("Processing…")}`;
 		try {
 			await frappe.call({
 				method: "nagi_attendance.short_permission.apply_permission_action",
-				args: { name, action, manager_comment: dialog.get_value("manager_comment") },
+				args: { name, action },
 				freeze: false,
 			});
-			dialog.hide();
 			frappe.show_alert({ message: action === "Approve" ? __("Permission request approved") : __("Permission request rejected"), indicator: "green" });
 			await this.refresh_permission_context();
 			await this.load_permissions();
 		} catch (error) {
 			frappe.msgprint({ title: __("Unable to update permission request"), message: this.esc(error?.message || error), indicator: "red" });
 		} finally {
-			this.permission_action_busy = false;
-			dialog.get_primary_btn().prop("disabled", false);
-			dialog.get_secondary_btn().prop("disabled", false);
+			this.permission_actions_busy.delete(name);
+			if (button.isConnected) {
+				button.innerHTML = original_label;
+				$buttons.prop("disabled", false);
+			}
 		}
 	}
 

@@ -294,8 +294,13 @@ class TestShortPermissionWorkflow(IntegrationTestCase):
 		)
 		frappe.set_user(self.employee.leave_approver)
 		self.assertEqual(
-			apply_permission_action(to_reject["name"], "Reject", "Not approved")["status"], "Rejected"
+			apply_permission_action(to_reject["name"], "Reject")["status"], "Rejected"
 		)
+		self.assertIsNone(
+			frappe.db.get_value("Attendance Permission Request", to_reject["name"], "manager_comment")
+		)
+		with self.assertRaises(frappe.ValidationError):
+			apply_permission_action(to_reject["name"], "Reject")
 
 		frappe.set_user("a.mohsen@adanlawfirm.com")
 		to_cancel = create_permission_request(
