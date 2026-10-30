@@ -139,6 +139,8 @@ const locale = computed(()=>lang.value === "ar" ? "ar-SA" : "en-GB")
 const fullDate = computed(()=>new Intl.DateTimeFormat(locale.value,{weekday:"long",day:"numeric",month:"long",year:"numeric"}).format(new Date()))
 
 async function api(method, args={}, post=false) {
+	// Frappe uses _lang to translate validation errors for the selected PWA language.
+	args = {...args, _lang:lang.value || "ar"}
 	const options = {
 		method:post?"POST":"GET",
 		cache:"no-store",

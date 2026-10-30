@@ -207,3 +207,6 @@
 "No permission requests","لا توجد طلبات إذن"
 "No requests match the current filters.","لا توجد طلبات تطابق عوامل التصفية الحالية."
 "Clear filters","مسح عوامل التصفية"
+"This leave type is not available for the selected date.","نوع الإجازة هذا غير متاح للتاريخ المحدد."
+"Mobile leave is disabled for this company.","طلبات الإجازة عبر الجوال معطلة لهذه الشركة."
+"No active employee record is linked to your user for this company.","لا يوجد سجل موظف نشط مرتبط بحسابك في هذه الشركة."

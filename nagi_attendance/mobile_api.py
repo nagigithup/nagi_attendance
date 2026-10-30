@@ -362,8 +362,9 @@ def create_leave_application(
 			"status": "Open",
 		}
 	)
+	# Native HRMS keeps employee requests Open (draft) until an approver decides.
+	# Submitting here requires approver rights and HRMS rejects Open submissions.
 	doc.insert()
-	doc.submit()
 	return {"name": doc.name, "status": doc.status, "docstatus": doc.docstatus}
 
 

@@ -1,9 +1,9 @@
-const BUILD_ID = "mvswmetl"
+const BUILD_ID = "mvuhrj93"
 const CACHE_PREFIX = "nagi-attendance-shell-"
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`
 const SHELL_ASSETS = [
 	"/assets/nagi_attendance/attendance/app.ClWDV7aP.css",
-	"/assets/nagi_attendance/attendance/app.CZ6vUOMv.js",
+	"/assets/nagi_attendance/attendance/app.Bcft-PvP.js",
 	"/assets/nagi_attendance/images/attendance-app.svg",
 	"/assets/nagi_attendance/images/attendance-app-192.png",
 	"/assets/nagi_attendance/images/attendance-app-512.png"
