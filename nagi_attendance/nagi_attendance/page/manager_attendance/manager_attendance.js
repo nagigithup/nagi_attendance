@@ -1,5 +1,9 @@
 frappe.pages["manager-attendance"].on_page_load = (wrapper) => {
-	frappe.nagi_attendance = new NagiAttendance(wrapper);
+	frappe.nagi_attendance = wrapper.nagi_attendance = new NagiAttendance(wrapper);
+};
+
+frappe.pages["manager-attendance"].on_page_show = (wrapper) => {
+	if (wrapper.nagi_attendance?.initialized) wrapper.nagi_attendance.refresh();
 };
 
 class NagiAttendance {
@@ -33,6 +37,7 @@ class NagiAttendance {
 		this.restore_state();
 		this.render_shell();
 		this.bind_events();
+		this.bind_pending_updates();
 		this.initialize();
 	}
 
@@ -50,7 +55,45 @@ class NagiAttendance {
 			// A reporting preference must never prevent the dashboard from loading.
 		}
 		await this.refresh_permission_context();
-		this.load_active();
+		await this.load_active();
+		this.initialized = true;
+	}
+
+	async refresh() {
+		await this.refresh_permission_context();
+		await this.load_active();
+	}
+
+
+	bind_pending_updates() {
+		const previous = frappe.nagi_attendance;
+		if (previous?.leave_invalidation_handler) {
+			frappe.realtime?.off("hrms:refetch_resource", previous.leave_invalidation_handler);
+			frappe.realtime?.off("notification", previous.notification_handler);
+			clearTimeout(previous.pending_update_timer);
+		}
+		this.leave_invalidation_handler = (data) => {
+			const keys = Array.isArray(data?.cache_key) ? data.cache_key : [data?.cache_key];
+			if (keys.includes("hrms:team_leaves")) this.schedule_pending_refresh();
+		};
+		this.notification_handler = () => this.schedule_pending_refresh();
+		frappe.realtime?.on("hrms:refetch_resource", this.leave_invalidation_handler);
+		frappe.realtime?.on("notification", this.notification_handler);
+		// A standalone development server may have no Socket.IO connection.
+		$(window).off("focus.nagi_pending").on("focus.nagi_pending", this.notification_handler);
+		$(document).off("visibilitychange.nagi_pending").on("visibilitychange.nagi_pending", this.notification_handler);
+	}
+
+	schedule_pending_refresh() {
+		if (!this.initialized || document.visibilityState === "hidden" || !this.$root.is(":visible")) return;
+		clearTimeout(this.pending_update_timer);
+		this.pending_update_timer = setTimeout(async () => {
+			if (document.visibilityState === "hidden" || !this.$root.is(":visible")) return;
+			if (this.leave_actions_busy?.size || this.permission_actions_busy?.size) return;
+			await this.refresh_permission_context();
+			if (this.state.tab === "leave") await this.load_leave();
+			else if (this.state.tab === "permissions") await this.load_permissions();
+		}, 250);
 	}
 
 	restore_state() {
@@ -70,12 +113,12 @@ class NagiAttendance {
 			`<div class="nagi-attendance" dir="${this.is_arabic ? "rtl" : "ltr"}" lang="${this.is_arabic ? "ar" : "en"}">
 				<section class="na-hero">
 					<div><span class="na-kicker">${__("Manager overview")}</span><h2>${__("Attendance & Leave")}</h2><p>${__("A clear view of your team, right now.")}</p></div>
-					<button class="btn btn-default btn-sm" data-action="refresh">${frappe.utils.icon("refresh-cw", "sm")} ${__("Refresh")}</button>
+					<div class="na-hero-actions"><span class="na-pending-notification" data-pending-notification hidden aria-live="polite"><span>${__("Pending My Approval")}</span><strong data-total-pending>0</strong></span><button class="btn btn-default btn-sm" data-action="refresh">${frappe.utils.icon("refresh-cw", "sm")} ${__("Refresh")}</button></div>
 				</section>
 				<nav class="na-tabs" aria-label="${__("Dashboard views")}">
 					<button class="${this.state.tab === "today" ? "active" : ""}" data-tab="today">${__("Today")}</button>
 					<button class="${this.state.tab === "monthly" ? "active" : ""}" data-tab="monthly">${__("Monthly Attendance")}</button>
-					<button class="${this.state.tab === "leave" ? "active" : ""}" data-tab="leave">${__("Leave")}</button>
+					<button class="${this.state.tab === "leave" ? "active" : ""}" data-tab="leave"><span>${__("Leave")}</span><span class="na-tab-count" data-leave-count hidden>0</span></button>
 					<button class="${this.state.tab === "permissions" ? "active" : ""}" data-tab="permissions" hidden><span>${__("Short Permissions")}</span><span class="na-tab-count" data-permission-count hidden>0</span></button>
 				</nav>
 				<section class="na-filters"></section>
@@ -124,7 +167,7 @@ class NagiAttendance {
 			this.state.tab = event.currentTarget.dataset.tab;
 			this.$root.find("[data-tab]").removeClass("active");
 			$(event.currentTarget).addClass("active");
-			if (this.state.tab === "permissions") await this.refresh_permission_context();
+			if (["leave", "permissions"].includes(this.state.tab)) await this.refresh_permission_context();
 			this.render_filters();
 			this.persist_state();
 			this.load_active();
@@ -140,10 +183,7 @@ class NagiAttendance {
 				this.load_active();
 			}
 		});
-		this.$root.on("click", '[data-action="refresh"]', async () => {
-			await this.refresh_permission_context();
-			this.load_active();
-		});
+		this.$root.on("click", '[data-action="refresh"]', () => this.refresh());
 		this.$root.on("click", "[data-summary-status]", (event) => {
 			this.state.status = event.currentTarget.dataset.summaryStatus;
 			this.$root.find('[data-filter="status"]').val(this.state.status);
@@ -151,6 +191,7 @@ class NagiAttendance {
 		});
 		this.$root.on("click", "[data-employee]", (event) => this.open_employee(event.currentTarget.dataset.employee));
 		this.$root.on("click", "[data-leave-action]", (event) => this.apply_leave_action(event.currentTarget));
+		this.$root.on("click", "[data-leave-view]", (event) => this.open_leave(event.currentTarget.dataset.leaveView));
 		this.$root.on("click", "[data-permission-action]", (event) => {
 			event.stopPropagation();
 			this.apply_permission_action(event.currentTarget);
@@ -186,15 +227,25 @@ class NagiAttendance {
 	}
 
 	async refresh_permission_context() {
+		const refresh_id = this.pending_refresh_id = (this.pending_refresh_id || 0) + 1;
 		try {
-			this.permission_context = await this.call("get_short_permission_context");
+			const context = await this.call("get_manager_pending_context");
+			if (refresh_id !== this.pending_refresh_id) return;
+			this.permission_context = context.short_permissions;
+			this.pending_context = context;
 		} catch (_) {
+			if (refresh_id !== this.pending_refresh_id) return;
 			this.permission_context = { visible: false, pending_count: 0, filters: {} };
+			this.pending_context = { leave_count: 0, short_permission_count: 0, total_pending: 0 };
 		}
+		const pending = this.pending_context;
+		this.$root.find("[data-leave-count]").text(this.format_number(pending.leave_count)).prop("hidden", !pending.leave_count);
+		this.$root.find("[data-total-pending]").text(this.format_number(pending.total_pending));
+		this.$root.find("[data-pending-notification]").prop("hidden", !pending.total_pending);
 		const tab = this.$root.find('[data-tab="permissions"]');
 		tab.prop("hidden", !this.permission_context.visible);
 		const count = tab.find("[data-permission-count]");
-		count.text(this.permission_context.pending_count || 0).prop("hidden", !this.permission_context.pending_count);
+		count.text(this.format_number(this.permission_context.pending_count || 0)).prop("hidden", !this.permission_context.pending_count);
 		if (!this.permission_context.visible && this.state.tab === "permissions") {
 			this.state.tab = "today";
 			this.$root.find("[data-tab]").removeClass("active");
@@ -315,16 +366,78 @@ class NagiAttendance {
 
 	leave_rows(rows, pending = false) {
 		if (!rows.length) return this.empty(pending ? __("No pending leave requests.") : __("No leave scheduled."));
-		return `<div class="na-leave-list">${rows.map((row) => `<article><div><button data-employee="${this.esc(row.employee)}">${this.esc(row.employee_name)}</button><span class="na-badge status-on-leave">${this.esc(__(row.leave_type))}</span></div><p>${frappe.datetime.str_to_user(row.from_date)} → ${frappe.datetime.str_to_user(row.to_date)} · ${row.total_leave_days} ${__("days")}</p>${row.description ? `<small>${this.esc(row.description)}</small>` : ""}<div class="na-leave-actions">${pending ? row.actions.map((action) => `<button class="btn btn-${action.toLowerCase().includes("reject") ? "default" : "primary"} btn-xs" data-leave-action="${this.esc(action)}" data-leave-name="${this.esc(row.name)}">${this.esc(__(action))}</button>`).join("") : ""}<button class="btn btn-default btn-xs" onclick="frappe.set_route('Form', 'Leave Application', '${this.esc(row.name)}')">${__("View Application")}</button></div></article>`).join("")}</div>`;
+		return `<div class="na-leave-list">${rows.map((row) => `<article><div><button data-employee="${this.esc(row.employee)}">${this.esc(row.employee_name)}</button><span class="na-badge status-on-leave">${this.esc(__(row.leave_type))}${row.status ? ` · ${this.esc(__(row.status))}` : ""}</span></div><p>${frappe.datetime.str_to_user(row.from_date)} → ${frappe.datetime.str_to_user(row.to_date)} · ${this.format_number(row.total_leave_days)} ${__("days")}</p>${row.description ? `<small>${this.esc(row.description)}</small>` : ""}<div class="na-leave-actions">${pending ? this.leave_action_buttons(row, row.actions || []) : ""}<button class="btn btn-default btn-xs" data-leave-view="${this.esc(row.name)}">${__("View Request")}</button></div></article>`).join("")}</div>`;
+	}
+
+	leave_action_buttons(row, actions) {
+		return actions.map((action) => `<button class="btn btn-${action.toLowerCase().includes("reject") ? "default" : "primary"} btn-sm" data-leave-action="${this.esc(action)}" data-leave-name="${this.esc(row.name)}" data-leave-modified="${this.esc(row.modified || "")}">${this.esc(__(action))}</button>`).join("");
+	}
+
+	async open_leave(name) {
+		if (this.state.tab !== "leave") {
+			this.state.tab = "leave";
+			this.$root.find("[data-tab]").removeClass("active");
+			this.$root.find('[data-tab="leave"]').addClass("active");
+			this.render_filters();
+			this.persist_state();
+			await this.load_leave();
+		}
+		this.leave_dialog?.dialog.hide();
+		const dialog = new frappe.ui.Dialog({ title: __("Leave Request Details"), size: "large", fields: [{ fieldtype: "HTML", fieldname: "content" }] });
+		this.leave_dialog = { name, dialog };
+		dialog.fields_dict.content.$wrapper.html(`<div class="na-loading"><span></span><p>${__("Loading leave request…")}</p></div>`);
+		dialog.$wrapper.on("click", "[data-leave-action]", (event) => this.apply_leave_action(event.currentTarget));
+		dialog.show();
+		try {
+			this.render_leave_details(dialog, await this.call("get_leave_details", { name }));
+		} catch (error) {
+			dialog.fields_dict.content.$wrapper.html(this.error_html(error));
+		}
+	}
+
+	render_leave_details(dialog, data) {
+		const row = data.request;
+		const fields = [
+			["Employee ID", row.employee], ["Leave Type", __(row.leave_type)],
+			["From Date", frappe.datetime.str_to_user(row.from_date)], ["To Date", frappe.datetime.str_to_user(row.to_date)],
+			["Total Leave Days", this.format_number(row.total_leave_days)], ["Half Day", __(row.half_day ? "Yes" : "No")],
+			["Approver", row.leave_approver_name || row.leave_approver], ["Status", __(row.status)],
+		];
+		if (row.half_day && row.half_day_date) fields.push(["Half Day Date", frappe.datetime.str_to_user(row.half_day_date)]);
+		if (data.leave_balance != null) fields.push(["Leave Balance on From Date", this.format_number(data.leave_balance)]);
+		if (row.workflow_state) fields.push(["Workflow State", __(row.workflow_state)]);
+		dialog.set_title(`${__("Leave Request Details")} · ${this.esc(row.name)}`);
+		dialog.fields_dict.content.$wrapper.html(`<div class="na-permission-detail na-leave-detail" dir="${this.is_arabic ? "rtl" : "ltr"}">
+			<div class="na-drawer-profile"><span class="na-avatar">${this.esc((row.employee_name || "?").slice(0, 1))}</span><div><h3>${this.esc(row.employee_name)}</h3><p>${this.esc([row.company, row.department].filter(Boolean).join(" · "))}</p><span class="na-badge status-${frappe.scrub(row.status)}">${this.esc(__(row.status))}</span></div></div>
+			<div class="na-permission-detail-grid">${fields.map(([label, value]) => `<div><span>${__(label)}</span><strong>${this.esc(value ?? "—")}</strong></div>`).join("")}</div>
+			<section class="na-permission-reason"><span>${__("Reason")}</span><p>${this.esc(row.description || "—")}</p></section>
+			<div class="na-leave-actions">${this.leave_action_buttons(row, data.actions || [])}</div>
+		</div>`);
 	}
 
 	async apply_leave_action(button) {
-		const action = button.dataset.leaveAction;
-		frappe.confirm(__("Apply workflow action {0}?", [__(action)]), async () => {
-			await this.call("apply_leave_action", { name: button.dataset.leaveName, action });
+		const name = button.dataset.leaveName, action = button.dataset.leaveAction;
+		this.leave_actions_busy ||= new Set();
+		if (this.leave_actions_busy.has(name)) return;
+		this.leave_actions_busy.add(name);
+		const $buttons = this.$root.add(this.leave_dialog?.dialog.$wrapper || []).find("[data-leave-action]").filter((_index, node) => node.dataset.leaveName === name);
+		const original_label = button.innerHTML;
+		$buttons.prop("disabled", true);
+		button.innerHTML = `${frappe.utils.icon("loader", "xs")} ${__("Processing…")}`;
+		try {
+			await this.call("apply_leave_action", { name, action, modified: button.dataset.leaveModified || undefined });
 			frappe.show_alert({ message: __("Leave request updated"), indicator: "green" });
-			this.load_leave();
-		});
+			await this.refresh();
+			if (this.leave_dialog?.name === name) this.render_leave_details(this.leave_dialog.dialog, await this.call("get_leave_details", { name }));
+		} catch (error) {
+			frappe.msgprint({ title: __("Unable to update leave request"), message: this.esc(error?.message || error), indicator: "red" });
+		} finally {
+			this.leave_actions_busy.delete(name);
+			if (button.isConnected) {
+				button.innerHTML = original_label;
+				$buttons.prop("disabled", false);
+			}
+		}
 	}
 
 	async load_permissions() {
@@ -465,6 +578,7 @@ class NagiAttendance {
 				<h4>${__("Upcoming Leave")}</h4>${this.leave_rows(data.upcoming_leave.map((leave) => ({ ...leave, employee: row.name, employee_name: row.employee_name })))}
 				<div class="na-drawer-links"><button class="btn btn-default btn-sm" data-route="Employee">${__("View Employee")}</button><button class="btn btn-default btn-sm" data-route="Attendance">${__("View Attendance")}</button><button class="btn btn-default btn-sm" data-route="Employee Checkin">${__("View Check-ins")}</button><button class="btn btn-default btn-sm" data-route="Leave Application">${__("View Leave Applications")}</button></div>
 			</div>`);
+			dialog.$wrapper.on("click", "[data-leave-view]", (event) => this.open_leave(event.currentTarget.dataset.leaveView));
 			dialog.$wrapper.on("click", "[data-route]", (event) => {
 				const doctype = event.currentTarget.dataset.route;
 				dialog.hide();

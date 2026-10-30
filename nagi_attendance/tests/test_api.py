@@ -1,5 +1,5 @@
 from datetime import datetime
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import frappe
 from frappe.tests import IntegrationTestCase, UnitTestCase
@@ -131,7 +131,7 @@ class TestReportingConfiguration(UnitTestCase):
 		):
 			self.assertIsNone(get_dashboard_defaults("Company A")["default_reporting_department"])
 
-	def test_leave_lists_use_the_selected_department_employee_scope(self):
+	def test_reporting_department_does_not_filter_assigned_approval_inbox(self):
 		with (
 			patch("nagi_attendance.api._require_access"),
 			patch("nagi_attendance.api._employees", return_value=[frappe._dict(name="EMP-LEGAL")]),
@@ -141,8 +141,25 @@ class TestReportingConfiguration(UnitTestCase):
 
 		self.assertEqual(data["on_leave"], [])
 		self.assertEqual(len(get_rows.call_args_list), 3)
-		for call in get_rows.call_args_list:
+		for call in get_rows.call_args_list[:2]:
 			self.assertEqual(call.args[1]["employee"], ["in", ["EMP-LEGAL"]])
+		pending_filters = get_rows.call_args_list[2].args[1]
+		self.assertNotIn("employee", pending_filters)
+		self.assertEqual(pending_filters["leave_approver"], frappe.session.user)
+		self.assertEqual(pending_filters["docstatus"], 0)
+
+	def test_empty_reporting_department_still_loads_approval_inbox(self):
+		with (
+			patch("nagi_attendance.api._require_access"),
+			patch("nagi_attendance.api._employees", return_value=[]),
+			patch("nagi_attendance.api._get_rows", return_value=[]) as get_rows,
+			patch("nagi_attendance.api._pending_leave_requests", return_value=[{"name": "ASSIGNED-LEAVE"}]),
+		):
+			data = get_leave_dashboard(department="Empty Department")
+		self.assertEqual(data["pending"], [{"name": "ASSIGNED-LEAVE"}])
+		self.assertEqual(len(get_rows.call_args_list), 2)
+		for call in get_rows.call_args_list:
+			self.assertEqual(call.args[1]["employee"], ["in", []])
 
 
 class TestAttendanceLogic(IntegrationTestCase):
@@ -207,16 +224,12 @@ class TestAttendanceLogic(IntegrationTestCase):
 		self.assertEqual(_attendance_code("Weekly Off"), "WO")
 
 	def test_native_leave_actions_are_available_to_assigned_approver(self):
-		doc = frappe._dict(
-			employee="HR-EMP-0001",
-			leave_approver=frappe.session.user,
-			docstatus=0,
-			status="Open",
-		)
+		doc = Mock(docstatus=0, status="Open")
 		with (
 			patch("nagi_attendance.api.frappe.get_doc", return_value=doc),
-			patch("nagi_attendance.api.frappe.db.get_value", return_value="another.user@example.com"),
-			patch("nagi_attendance.api.get_workflow_name", return_value=None),
+			patch("nagi_attendance.leave_approval.is_assigned_approver", return_value=True),
+			patch("nagi_attendance.leave_approval.check_leave_scope"),
+			patch("nagi_attendance.leave_approval.get_workflow_name", return_value=None),
 		):
 			self.assertEqual(_workflow_actions("LEAVE-TEST"), ["Approve", "Reject"])
 

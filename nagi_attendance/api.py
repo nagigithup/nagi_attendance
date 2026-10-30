@@ -6,10 +6,16 @@ from datetime import date, datetime, time, timedelta
 
 import frappe
 from frappe import _
-from frappe.model.workflow import get_transitions, get_workflow_name
+from frappe.model.workflow import get_workflow_name
 from frappe.utils import add_days, cint, flt, get_datetime, get_time, getdate, now_datetime, today
 
 from nagi_attendance.company import get_company_settings
+from nagi_attendance.leave_approval import (
+	check_leave_scope,
+	decide_leave,
+	is_assigned_approver,
+	leave_actions,
+)
 from nagi_attendance.short_permission import (
 	_is_admin,
 	_shift_window,
@@ -498,9 +504,15 @@ def get_short_permission_context() -> dict:
 	if visible:
 		filters = _permission_base_filters(scope)
 		filters.update({"status": "Pending", "company": ["in", scope.enabled_companies]})
-		pending_count = len(
-			frappe.get_list("Attendance Permission Request", filters=filters, pluck="name", limit=0)
+		# The badge is the signed-in manager's inbox, including for HR admins.
+		filters["approver"] = frappe.session.user
+		rows = frappe.get_list(
+			"Attendance Permission Request",
+			filters=filters,
+			fields=["name", "employee", "company", "approver", "status"],
+			limit=0,
 		)
+		pending_count = len({row.name for row in rows if _can_manage_permission(row, scope)})
 	return {
 		"visible": visible,
 		"pending_count": pending_count,
@@ -855,8 +867,6 @@ def get_leave_dashboard(
 	employee_filter = {}
 	if employee or department:
 		names = [row.name for row in _employees(employee, department)]
-		if not names:
-			return {"date": str(value), "on_leave": [], "upcoming": [], "pending": []}
 		employee_filter["employee"] = ["in", names]
 	base_fields = [
 		"name",
@@ -889,64 +899,102 @@ def get_leave_dashboard(
 		base_fields,
 		"from_date asc",
 	)[:20]
-	pending_filters = {**employee_filter, "status": "Open", "docstatus": ["<", 2]}
-	if frappe.session.user != "Administrator":
-		pending_filters["leave_approver"] = frappe.session.user
-	pending = _get_rows("Leave Application", pending_filters, base_fields, "from_date asc")
-	for row in pending:
-		row["actions"] = _workflow_actions(row.name)
+	# Reporting filters scope the calendars, not the manager's approval inbox.
+	# Keep this list aligned with the unfiltered actionable notification count.
+	pending = _pending_leave_requests()
 	return {"date": str(value), "on_leave": on_leave, "upcoming": upcoming, "pending": pending}
+
+
+def _pending_leave_requests() -> list:
+	filters = {
+		"status": "Open",
+		"docstatus": 0,
+		"leave_approver": frappe.session.user,
+	}
+	rows = _get_rows(
+		"Leave Application",
+		filters,
+		[
+			"name", "employee", "employee_name", "company", "leave_type", "from_date", "to_date",
+			"total_leave_days", "description", "status", "docstatus", "modified",
+		],
+		"from_date asc",
+	)
+	pending = []
+	for row in rows:
+		row["actions"] = _workflow_actions(row.name)
+		if row.actions:
+			pending.append(row)
+	return pending
 
 
 def _workflow_actions(name: str) -> list[str]:
 	try:
-		doc = frappe.get_doc("Leave Application", name)
+		return leave_actions(frappe.get_doc("Leave Application", name))
 	except frappe.DoesNotExistError:
-		return []
-	if not _is_assigned_leave_approver(doc):
-		return []
-	if not get_workflow_name("Leave Application"):
-		if doc.docstatus == 0 and doc.status == "Open":
-			return ["Approve", "Reject"]
-		return []
-	try:
-		return [row.action for row in get_transitions(doc)]
-	except (frappe.PermissionError, frappe.ValidationError):
 		return []
 
 
 def _is_assigned_leave_approver(doc) -> bool:
-	"""Enforce the Employee's assigned approver and prevent self-approval."""
-	if not doc.leave_approver or doc.leave_approver != frappe.session.user:
-		return False
-	employee_user = frappe.db.get_value("Employee", doc.employee, "user_id")
-	return employee_user != frappe.session.user
+	return is_assigned_approver(doc)
 
 
 @frappe.whitelist()
-def apply_leave_action(name: str, action: str):
+def get_leave_details(name: str) -> dict:
 	_require_access("Leave Application")
-
 	doc = frappe.get_doc("Leave Application", name)
-	doc.check_permission("write")
-	allowed = _workflow_actions(name)
-	if action not in allowed:
-		frappe.throw(_("Workflow action {0} is not available for this leave request.").format(action))
+	check_leave_scope(doc)
+	# Open approval requests belong to the assigned manager's inbox.
+	if doc.status == "Open" and not is_assigned_approver(doc):
+		frappe.throw(_("You are not authorized to access this leave request."), frappe.PermissionError)
+	fields = [
+		"name", "employee", "employee_name", "company", "leave_type", "from_date", "to_date",
+		"total_leave_days", "half_day", "half_day_date", "description", "status", "docstatus",
+		"leave_approver", "leave_approver_name", "modified",
+	]
+	request = {key: doc.get(key) for key in fields}
+	request["department"] = frappe.db.get_value("Employee", doc.employee, "department")
+	workflow = get_workflow_name("Leave Application")
+	if workflow:
+		state_field = frappe.get_cached_value("Workflow", workflow, "workflow_state_field")
+		request["workflow_state"] = doc.get(state_field)
+	balance = None
+	if not frappe.db.get_value("Leave Type", doc.leave_type, "is_lwp"):
+		from hrms.hr.doctype.leave_application.leave_application import get_leave_balance_on
 
-	if get_workflow_name("Leave Application"):
-		from frappe.model.workflow import apply_workflow
+		try:
+			balance = get_leave_balance_on(
+				doc.employee, doc.leave_type, doc.from_date,
+				to_date=doc.to_date, leave_application=doc.name,
+			)
+		except frappe.PermissionError:
+			# HRMS decides whether this user may see balances; never invent one.
+			pass
+	return {"request": request, "actions": leave_actions(doc), "leave_balance": balance}
 
-		updated = apply_workflow(doc, action)
-	else:
-		status = {"Approve": "Approved", "Reject": "Rejected"}.get(action)
-		if not status:
-			frappe.throw(_("Unsupported leave action: {0}").format(action))
-		doc.check_permission("submit")
-		doc.status = status
-		doc.save()
-		doc.submit()
-		updated = doc
-	return {"name": updated.name, "status": updated.status}
+
+@frappe.whitelist()
+def get_manager_pending_context() -> dict:
+	_require_access()
+	permissions = {"visible": False, "pending_count": 0, "filters": {}}
+	if frappe.has_permission("Attendance Permission Request", "read"):
+		permissions = get_short_permission_context()
+	leave_count = 0
+	if frappe.has_permission("Leave Application", "read"):
+		leave_count = len({row.name for row in _pending_leave_requests()})
+	short_count = permissions["pending_count"]
+	return {
+		"leave_count": leave_count,
+		"short_permission_count": short_count,
+		"total_pending": leave_count + short_count,
+		"short_permissions": permissions,
+	}
+
+
+@frappe.whitelist(methods=["POST"])
+def apply_leave_action(name: str, action: str, modified: str | None = None):
+	_require_access("Leave Application")
+	return decide_leave(name, action, modified)
 
 
 @frappe.whitelist()

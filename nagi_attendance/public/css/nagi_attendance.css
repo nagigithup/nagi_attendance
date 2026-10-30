@@ -267,3 +267,20 @@
 	.na-permission-stat { min-height: 88px; }
 	.na-permission-table th, .na-permission-table td { padding-block: 12px; }
 }
+
+/* Shared approval detail layout, including dialogs mounted outside the page. */
+.na-hero-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.na-pending-notification { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; }
+.na-pending-notification[hidden] { display: none; }
+.na-pending-notification strong { display: grid; min-width: 26px; min-height: 26px; padding: 3px 7px; place-items: center; border-radius: 999px; color: #fff; background: #b7534f; }
+.na-leave-detail { --na-ink: #162c2a; --na-muted: #6d7977; --na-line: #e7ebe9; text-align: start; }
+.na-leave-detail[dir="rtl"] { direction: rtl; }
+.na-leave-detail .na-permission-detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.na-leave-detail .na-permission-detail-grid strong,
+.na-leave-detail .na-permission-reason p,
+.na-leave-detail .na-drawer-profile p { overflow-wrap: anywhere; }
+.na-leave-actions { flex-wrap: wrap; }
+@media (max-width: 575px) {
+	.na-leave-detail .na-permission-detail-grid { grid-template-columns: 1fr; }
+	.na-hero-actions { width: 100%; justify-content: space-between; }
+}

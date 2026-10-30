@@ -37,7 +37,7 @@ add_to_apps_screen = [
 # include js, css files in header of desk.html
 # Keep the Desk stylesheet URL release-specific. The manager page is rendered
 # dynamically, while this unbundled asset may otherwise remain in browser cache.
-app_include_css = "/assets/nagi_attendance/css/nagi_attendance.css?v=1.1.0.2"
+app_include_css = "/assets/nagi_attendance/css/nagi_attendance.css?v=1.1.0.3"
 app_include_js = "/assets/nagi_attendance/js/nagi_attendance.js"
 
 # include js, css files in header of web template
@@ -153,7 +153,12 @@ app_include_js = "/assets/nagi_attendance/js/nagi_attendance.js"
 doc_events = {
 	"Employee Checkin": {
 		"validate": "nagi_attendance.attendance_validation.validate_mandatory_employee_checkin_location"
-	}
+	},
+	"Leave Application": {
+		"on_update": "nagi_attendance.leave_approval.notify_leave_approvers",
+		"on_cancel": "nagi_attendance.leave_approval.notify_leave_approvers",
+		"after_delete": "nagi_attendance.leave_approval.notify_leave_approvers",
+	},
 }
 
 permission_query_conditions = {

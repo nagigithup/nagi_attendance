@@ -4,7 +4,6 @@ from datetime import datetime, time
 
 import frappe
 from frappe import _
-from frappe.model.workflow import apply_workflow, get_transitions, get_workflow_name
 from frappe.utils import add_months, cint, flt, get_datetime, getdate, now_datetime, today
 
 from nagi_attendance.company import (
@@ -369,43 +368,17 @@ def create_leave_application(
 
 
 def _approval_actions(doc) -> list[str]:
-	user = frappe.session.user
-	prevent_self_approval = frappe.db.get_single_value("HR Settings", "prevent_self_leave_approval")
-	if (
-		prevent_self_approval
-		and doc.employee
-		and frappe.db.get_value("Employee", doc.employee, "user_id") == user
-	):
-		return []
-	workflow = get_workflow_name("Leave Application")
-	if workflow:
-		try:
-			return [transition.action for transition in get_transitions(doc)]
-		except (frappe.PermissionError, frappe.ValidationError):
-			return []
-	if doc.leave_approver == user and doc.docstatus == 0 and doc.status == "Open":
-		return ["Approve", "Reject"]
-	return []
+	from nagi_attendance.leave_approval import leave_actions
+
+	return leave_actions(doc)
 
 
 @frappe.whitelist(methods=["POST"])
-def apply_leave_action(name: str, action: str):
+def apply_leave_action(name: str, action: str, modified: str | None = None):
 	require_authenticated_user()
-	doc = frappe.get_doc("Leave Application", name)
-	doc.check_permission("write")
-	actions = _approval_actions(doc)
-	if action not in actions:
-		frappe.throw(_("This approval action is not available to you."), frappe.PermissionError)
-	if get_workflow_name("Leave Application"):
-		doc = apply_workflow(doc, action)
-	else:
-		status = {"Approve": "Approved", "Reject": "Rejected"}.get(action)
-		if not status:
-			frappe.throw(_("Unsupported approval action."))
-		doc.status = status
-		doc.save()
-		doc.submit()
-	return {"name": doc.name, "status": doc.status}
+	from nagi_attendance.leave_approval import decide_leave
+
+	return decide_leave(name, action, modified)
 
 
 @frappe.whitelist(methods=["POST"])
